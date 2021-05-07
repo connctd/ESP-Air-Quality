@@ -5,12 +5,13 @@
 #include <ArduinoJson.h>
 #include <ESP8266TrueRandom.h>
 #include "coap_client.h"
-
+#include <EEPROM.h>
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
 #define TRIGGER_PIN D6
 WiFiManager wm; 
 WiFiManagerParameter custom_field; 
+const char* AP_SSID = "Air-Quality";
 //bool connectedToWifi = false;
   
 
@@ -18,8 +19,6 @@ WiFiManagerParameter custom_field;
 #define LED_PIN   D4
 #define NUMPIXELS 13
 #define ALLPIXELS 28
-#define MAX_PPM   2500
-#define MIN_PPM   400
 
 
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(ALLPIXELS,LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -34,8 +33,14 @@ coapClient coap;
 IPAddress ip(35,205,82,53);
 StaticJsonDocument<200> jsonDoc;
 int port = 5683;
-char* actionPath = "api/v1/devices/umnetfb2/fw64/action";
-char* propertyPath = "api/v1/devices/umnetfb2/fw64/state";
+char* actionPath = " api/v1/devices/xxxxxxxx/xxxx/action";
+char* propertyPath = " api/v1/devices/xxxxxxxx/xxxx/status";
+
+struct DeviceConfig {    
+    char id[9];     // need one char more for String termination
+    char code[5];   // same here 
+} deviceConfig;
+
 
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 unsigned int loopCnt = 0;
@@ -47,24 +52,28 @@ unsigned int loopCnt = 0;
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 void setup() {
-
   
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
-  
+
+  pinMode(TRIGGER_PIN, INPUT);
+
+  EEPROM.begin(512);
 
   initializeRandomSeed();
   initializeLedRing();   
   initializeWiFi(); 
-
+  
   // ToDo - make non blocking and animate "connecting gauge"
   if (!connectToWiFi()){    
     ESP.restart();
   }
-  clearRing();
 
+  loadDeviceConfig();
+  clearRing();
   initializeCoapClient();
+
     
   delay(1500);    
 }
@@ -79,9 +88,30 @@ void initializeLedRing(){
 }
 
 void initializeCoapClient(){
+  buildPaths();
   coap.start(port);    
   coap.response(onServerMessage);
 }
+
+void loadDeviceConfig(){
+   Serial.println("Loading device settings");
+ 
+   EEPROM.get(0,deviceConfig);
+    
+   Serial.print("Device ID ");
+   Serial.println(deviceConfig.id);   
+}
+
+void saveDeviceConfig(){
+  EEPROM.put(0, deviceConfig);
+  if (EEPROM.commit()) {
+     Serial.println("Device configuration saved");
+  } else {
+     Serial.println("EEPROM error - Device Id and Device Code could not be saved");
+     errorRing();
+  }
+}
+
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    THE LOOP
@@ -104,23 +134,32 @@ void loop() {
   
   coap.loop();
   loopCnt++;
+
   
-  //if (loopCnt > ((2^16) - 1)){ // when 16bit max reached
-  //  loopCnt = 0;
-  //}
+  if (loopCnt > 65535){ // when 16bit max have been reached - do not care about 32bit systems
+    loopCnt = 0;
+  }
   
   delay(10);
-  
+
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    IoT Connctd
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+void buildPaths(){
+  String tmp = "api/v1/devices/"+String(deviceConfig.id)+"/"+String(deviceConfig.code)+"/action";
+  tmp.toCharArray(actionPath, tmp.length()+1);  
+  tmp = "api/v1/devices/"+String(deviceConfig.id)+"/"+String(deviceConfig.code)+"/status";
+  tmp.toCharArray(propertyPath, tmp.length()+1);
+}
 
 void registerForAction(){
-  
-   Serial.println("observing for action");    
+   if (actionPath == NULL){    
+     return;
+   }
+   Serial.println("observing for action");       
    int msgId = coap.observe(ip, port, actionPath, 0);
    Serial.print("Observe Message sent (ID = ");
    Serial.print(msgId);    
@@ -199,6 +238,9 @@ coapPacket buildAck(uint16_t messageid) {
 
 
 uint16_t sendData(String data){
+  if (propertyPath == NULL){
+    return -1 ;
+  }
   char dataChar[data.length() + 1];
   data.toCharArray(dataChar, data.length() + 1); 
   int msgID = coap.post(ip, port, propertyPath, dataChar, data.length());
@@ -253,26 +295,29 @@ uint16_t sendCo2Value(){
 
 
 void initializeWiFi(){
-  pinMode(TRIGGER_PIN, INPUT);
-  
+   
   
   int customFieldLength = 40;
-  const char* custom_radio_str = "<br/><label for='customfieldid'>IoT Connctd Configuration</label><input type='radio' name='customfieldid' value='1' checked> One<br><input type='radio' name='customfieldid' value='2'> Two<br><input type='radio' name='customfieldid' value='3'> Three";
+  
+  const char* custom_radio_str = "<br/><br/>Please enter Device ID <br/> <input type='text' name='deviceId' id='deviceId'/><br/>Please enter Device Code <br/> <input type='text' name='deviceCode' id='deviceCode'/>";
+  
   new (&custom_field) WiFiManagerParameter(custom_radio_str); // custom html input  
   wm.addParameter(&custom_field);
   wm.setSaveParamsCallback(saveParamCallback);
-  std::vector<const char *> menu = {"wifi","info","param","sep","restart","exit"};
+  std::vector<const char *> menu = {"wifi","info","sep","restart","exit"};
   wm.setMenu(menu);  
   wm.setClass("invert");
   wm.setAPCallback(configModeCallback);
   wm.setConfigPortalTimeout(300);
 }
+  
+
 
 bool connectToWiFi(){
   bool res;
 
   // connect to alread configured WiFi or start AP  
-  res = wm.autoConnect("Connctd-ESP","password"); 
+  res = wm.autoConnect(AP_SSID,NULL); 
 
   if(!res) {
     Serial.println("Failed to connect or hit timeout");
@@ -288,6 +333,7 @@ bool connectToWiFi(){
 
 
 void checkButton(){  
+  // TODO  shitty solution, include that in loop somehow
     if( digitalRead(TRIGGER_PIN) == LOW ){
   
         Serial.println("checking Button press");
@@ -305,7 +351,7 @@ void checkButton(){
         // still holding button for 3000 ms, reset settings, code not ideaa for production
         delay(5000); // reset delay hold
         if( digitalRead(TRIGGER_PIN) == LOW ){
-          Serial.println("Button Held");
+          Serial.println("Button held");
           Serial.println("Erasing Config, restarting");
           errorRing();
           wm.resetSettings();
@@ -314,8 +360,8 @@ void checkButton(){
       
       // start portal w delay
         Serial.println("Starting config portal");
-        wm.setConfigPortalTimeout(300);     
-        if (!wm.startConfigPortal("Connctd-ESP","password")) {
+        wm.setConfigPortalTimeout(120);     
+        if (!wm.startConfigPortal(AP_SSID,NULL)) {
           Serial.println("failed to connect or hit timeout");          
           errorRing();       
           delay(3000);
@@ -328,8 +374,6 @@ void checkButton(){
     }
 }
 
-
-
 String getParam(String name){
   //read parameter from server, for customhmtl input
   String value;
@@ -341,7 +385,17 @@ String getParam(String name){
 
 void saveParamCallback(){
   Serial.println("[CALLBACK] saveParamCallback fired");
-  Serial.println("PARAM customfieldid = " + getParam("customfieldid"));
+ 
+  String deviceId = getParam("deviceId");
+  deviceId.toCharArray(deviceConfig.id,9);
+  deviceConfig.id[8] = '\0';
+  String deviceCode = getParam("deviceCode");
+  deviceCode.toCharArray(deviceConfig.code,5);
+  deviceConfig.code[4] = '\0';
+
+  Serial.println("PARAM deviceId   = " + String(deviceConfig.id));
+  Serial.println("PARAM deviceCode = " + String(deviceConfig.code));
+  saveDeviceConfig();
 }
 
 void configModeCallback (WiFiManager *myWiFiManager) {
