@@ -1,4 +1,15 @@
 
+/*
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ */
+
+
+
 #include <ESP8266WiFi.h>
 #include <Adafruit_NeoPixel.h>
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
@@ -6,6 +17,11 @@
 #include <ESP8266TrueRandom.h>
 #include "coap_client.h"
 #include <EEPROM.h>
+#include <Wire.h>
+#include <SPI.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
 #define TRIGGER_PIN D6
@@ -45,8 +61,17 @@ struct DeviceConfig {
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 unsigned int loopCnt = 0;
 
+// +++++++++++++++++++++++ Sensoring +++++++++++++++++++
 
+#define SEALEVELPRESSURE_HPA (1013.25)
 
+Adafruit_BME280 bme; 
+
+float temperature = 0.0;
+float humidity = 0.0;
+float pressure = 0.0;
+
+bool sensorsAvailable = false;
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -74,6 +99,7 @@ void setup() {
   clearRing();
   initializeCoapClient();
 
+  sensorsAvailable = initBME280();
     
   delay(1500);    
 }
@@ -128,8 +154,17 @@ void loop() {
     // TODO: measure Values
     //       send property changes when value changed
     sendCo2Value();    
-    sendTemperatureValue();
-    sendHumidityValue();
+    if (sensorsAvailable) {
+       if (readTemperature()){
+        sendTemperatureValue();
+      }
+      if (readHumidity()){
+        sendHumidityValue();
+      }
+      if (readPressure()){
+        sendPressureValue();
+      }
+    }
   }
   
   coap.loop();
@@ -143,6 +178,44 @@ void loop() {
   delay(10);
 
 }
+
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//                                    Sensoring
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+bool initBME280(){
+  Serial.print("Initializing BME280 ... ");
+  bool res = bme.begin(BME280_ADDRESS_ALTERNATE, &Wire);
+  if (res){
+    Serial.println("OK");
+  } else {
+    Serial.println("ERROR - No BME280 found on I2C wiring");
+    
+  }
+  return res;
+}
+
+bool readTemperature(){  
+  float newTemperature = float(int(bme.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
+  bool res = (temperature != newTemperature);
+  temperature = newTemperature;
+  return res;
+}
+
+bool readHumidity(){
+  float newHumidity = int(bme.readHumidity()); // ignore values after . 
+  bool res (humidity != newHumidity);
+  humidity = newHumidity;
+  return res;
+}
+
+bool readPressure(){
+  float newPressure = int(bme.readPressure())/100; 
+  bool res = (pressure != newPressure);
+  pressure = newPressure;
+  return res;
+}
+
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    IoT Connctd
@@ -236,6 +309,11 @@ coapPacket buildAck(uint16_t messageid) {
   return packet;
 }
 
+uint16_t sendJson(){
+  String data;  
+  serializeJson(jsonDoc, data);  
+  return sendData(data);
+}
 
 uint16_t sendData(String data){
   if (propertyPath == NULL){
@@ -253,25 +331,17 @@ uint16_t sendData(String data){
 
 uint16_t sendHumidityValue(){
   jsonDoc.clear();
-  jsonDoc["value"] = "62";
+  jsonDoc["value"] = String(humidity);
   jsonDoc["id"] = "humidity";
-
-  String data;
-
-  
-  serializeJson(jsonDoc, data);  
-  return sendData(data);
+  return sendJson();  
 }
 
 uint16_t sendTemperatureValue(){
   jsonDoc.clear();
-  jsonDoc["value"] = "21.5";
+  jsonDoc["value"] = String(temperature);
   jsonDoc["id"] = "temperature";
 
-  String data;
-
-  serializeJson(jsonDoc, data);  
-  return sendData(data);
+  return sendJson();
 }
 
 uint16_t sendCo2Value(){
@@ -279,14 +349,17 @@ uint16_t sendCo2Value(){
   jsonDoc["value"] = "865";
   jsonDoc["id"] = "co2";
 
-  String data;
-
-  serializeJson(jsonDoc, data);  
-  
-  char dataChar[data.length() + 1];
-  data.toCharArray(dataChar, data.length() + 1); 
-  return sendData(data);
+  return sendJson();
 }
+
+
+uint16_t sendPressureValue(){
+  jsonDoc.clear();
+  jsonDoc["value"] = String(pressure);
+  jsonDoc["id"] = "pressure";
+  return sendJson();
+}
+
 
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -393,8 +466,8 @@ void saveParamCallback(){
   deviceCode.toCharArray(deviceConfig.code,5);
   deviceConfig.code[4] = '\0';
 
-  Serial.println("PARAM deviceId   = " + String(deviceConfig.id));
-  Serial.println("PARAM deviceCode = " + String(deviceConfig.code));
+  Serial.println("deviceId   = " + String(deviceConfig.id));
+  Serial.println("deviceCode = " + String(deviceConfig.code));
   saveDeviceConfig();
 }
 
