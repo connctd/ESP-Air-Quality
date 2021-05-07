@@ -1,9 +1,27 @@
 
 /*
  * 
+ *  ----------------------------------------------------------------------------------------------------------------------
+ *                          _   ___ ___    ___  _   _  _   _    ___ _______   __  ___ ___ ___ 
+ *                         /_\ |_ _| _ \  / _ \| | | |/_\ | |  |_ _|_   _\ \ / / | __/ __| _ \
+ *                        / _ \ | ||   / | (_) | |_| / _ \| |__ | |  | |  \ V /  | _|\__ \  _/
+ *                       /_/ \_\___|_|_\  \__\_\\___/_/ \_\____|___| |_|   |_|   |___|___/_|  
+ *  ----------------------------------------------------------------------------------------------------------------------                          
+ *  
  * 
- * 
- * 
+ *           FileStructure ┐
+ *                         ├ Variable Declaration ┐
+ *                         |                      ├ WiFi Management 
+ *                         |                      ├ Gauge
+ *                         |                      ├ Connctd / Coap
+ *                         |                      ├ General
+ *                         |                      └ Sensoring
+ *                         ├ Setup
+ *                         ├ The Loop
+ *                         ├ Sensoring
+ *                         ├ Connctd
+ *                         ├ WiFi Management 
+ *                         └ Gauge
  * 
  * 
  */
@@ -120,10 +138,8 @@ void initializeCoapClient(){
 }
 
 void loadDeviceConfig(){
-   Serial.println("Loading device settings");
- 
-   EEPROM.get(0,deviceConfig);
-    
+   Serial.println("Loading device settings"); 
+   EEPROM.get(0,deviceConfig);    
    Serial.print("Device ID ");
    Serial.println(deviceConfig.id);   
 }
@@ -150,9 +166,7 @@ void loop() {
     registerForAction();
   }
 
-  if ((loopCnt % 3000) == 0){  // every 30s
-    // TODO: measure Values
-    //       send property changes when value changed
+  if ((loopCnt % 3000) == 0){  // every 30s    
     sendCo2Value();    
     if (sensorsAvailable) {
        if (readTemperature()){
@@ -249,7 +263,7 @@ void onServerMessage(coapPacket &packet, IPAddress ip, int port) {
   Serial.print(" | payload = ");
   Serial.print(packet.payloadlen);
   Serial.println(")");
-  //response from coap server
+  
   if (packet.type == COAP_ACK) {
     Serial.println("- ACK received");
   } else if (packet.type == COAP_CON || packet.type == COAP_NONCON) {
@@ -268,11 +282,11 @@ void processPacket(coapPacket &packet, IPAddress ip, int port) {
     char p[packet.payloadlen + 1];
     memcpy(p, packet.payload, packet.payloadlen);
     p[packet.payloadlen] = NULL;    
-    Serial.println(p);
+    Serial.print("processing payload (");
+    Serial.print(p);
+    Serial.println(")");
     jsonDoc.clear();
-    DeserializationError error = deserializeJson(jsonDoc, p);
-
-  // Test if parsing succeeds.
+    DeserializationError error = deserializeJson(jsonDoc, p);  
     if (error) {
       Serial.print(F("deserializeJson() failed: "));
       Serial.println(error.f_str());
@@ -289,8 +303,7 @@ void processPacket(coapPacket &packet, IPAddress ip, int port) {
       Serial.print(value);
       Serial.println(")");
      
-         setGaugePercentage(value);
-     
+      setGaugePercentage(value);     
     }    
 }
 
@@ -367,13 +380,9 @@ uint16_t sendPressureValue(){
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-void initializeWiFi(){
-   
-  
-  int customFieldLength = 40;
-  
-  const char* custom_radio_str = "<br/><br/>Please enter Device ID <br/> <input type='text' name='deviceId' id='deviceId'/><br/>Please enter Device Code <br/> <input type='text' name='deviceCode' id='deviceCode'/>";
-  
+void initializeWiFi(){ 
+  int customFieldLength = 40;  
+  const char* custom_radio_str = "<br/><br/>Please enter Device ID <br/> <input type='text' name='deviceId' id='deviceId'/><br/>Please enter Device Code <br/> <input type='text' name='deviceCode' id='deviceCode'/>";  
   new (&custom_field) WiFiManagerParameter(custom_radio_str); // custom html input  
   wm.addParameter(&custom_field);
   wm.setSaveParamsCallback(saveParamCallback);
@@ -383,9 +392,7 @@ void initializeWiFi(){
   wm.setAPCallback(configModeCallback);
   wm.setConfigPortalTimeout(300);
 }
-  
-
-
+ 
 bool connectToWiFi(){
   bool res;
 
@@ -431,7 +438,7 @@ void checkButton(){
           ESP.restart();
         }
       
-      // start portal w delay
+  
         Serial.println("Starting config portal");
         wm.setConfigPortalTimeout(120);     
         if (!wm.startConfigPortal(AP_SSID,NULL)) {
@@ -447,8 +454,7 @@ void checkButton(){
     }
 }
 
-String getParam(String name){
-  //read parameter from server, for customhmtl input
+String getParam(String name){  
   String value;
   if(wm.server->hasArg(name)) {
     value = wm.server->arg(name);
