@@ -57,9 +57,10 @@ const char* AP_SSID = "Air-Quality";
 
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(ALLPIXELS,LED_PIN, NEO_GRB + NEO_KHZ800);
 
-int animationSpeed = 50; 
-int oldScaleValue = 1;
-
+int animationSpeed = 50;  
+int oldScaleValue = 1;     // needed for value change animation of gauge
+int gaugeValue = 0;
+float brightness = 1.0F;   // value between 0 (off) and 1 (full brightness)
 
 // +++++++++++++++++++++++ Connctd +++++++++++++++++++++
 
@@ -117,9 +118,7 @@ void setup() {
   clearRing();
   initializeCoapClient();
 
-  sensorsAvailable = initBME280();
-    
-  delay(1500);    
+  sensorsAvailable = initBME280();  
 }
 
 void initializeRandomSeed(){
@@ -166,8 +165,9 @@ void loop() {
     registerForAction();
   }
 
-  if ((loopCnt % 3000) == 0){  // every 30s    
+  if ((loopCnt % 3000) == 0){  // every 30s        
     sendCo2Value();    
+    sendGaugeBrightnessValue();
     if (sensorsAvailable) {
        if (readTemperature()){
         sendTemperatureValue();
@@ -302,9 +302,15 @@ void processPacket(coapPacket &packet, IPAddress ip, int port) {
       Serial.print("(");
       Serial.print(value);
       Serial.println(")");
-     
-      setGaugePercentage(value);     
+
+      if (actionName == "setGauge"){
+        setGaugePercentage(value);     
+      }
+      if (actionName == "setBrightness"){
+        setGaugeBrightness(value);
+      }      
     }    
+   
 }
 
 
@@ -373,7 +379,19 @@ uint16_t sendPressureValue(){
   return sendJson();
 }
 
+uint16_t sendGaugeBrightnessValue(){
+  jsonDoc.clear();
+  jsonDoc["value"] = String(brightness*100);
+  jsonDoc["id"] = "brightness";
+  return sendJson();
+}
 
+uint16_t sendGaugeValue(){
+  jsonDoc.clear();
+  jsonDoc["value"] = String(gaugeValue);
+  jsonDoc["id"] = "gauge";
+  return sendJson();
+}
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    WiFi Manager
@@ -489,9 +507,31 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 void setGaugePercentage(int value){
   Serial.print("setting new value: ");
   Serial.println(value);
+  gaugeValue = value;
+  sendGaugeValue();
+  
+  if (value == 0){
+    clearRing();
+    oldScaleValue = 0;
+    return;
+  }
   int newScaleValue = getScaleValue(value);
   animateGauge(oldScaleValue, newScaleValue);
   oldScaleValue = newScaleValue;
+  
+}
+
+void setGaugeBrightness(int value){  
+  Serial.print("Setting brightness to ");
+  Serial.print(value);
+  Serial.println("%");  
+  brightness = float(value)/100.F;
+  int as_mem = animationSpeed;  // remember animation speed, animation will be disabled temporarily
+  animationSpeed = 0;
+  animateGauge(0,oldScaleValue);
+  animationSpeed = as_mem;
+  sendGaugeBrightnessValue();
+  
 }
 
 int getScaleValue(int value){
@@ -510,7 +550,7 @@ int getScaleValue(int value){
 void animateGauge(int startPixel, int stopPixel){
   if (startPixel <= stopPixel) {  
     for (int i=0; i < stopPixel; i++){
-      pixels.setPixelColor(i, pixels.Color((255/NUMPIXELS)*i,150-(150/NUMPIXELS)*i,0)); 
+      pixels.setPixelColor(i, pixels.Color(((255/NUMPIXELS)*i)*brightness,(150-(150/NUMPIXELS)*i)*brightness,0)); 
       pixels.show(); 
       delay(animationSpeed); 
     }  
@@ -533,21 +573,21 @@ void clearRing(){
 
 void blueRing(){
   for (int i=0; i <= ALLPIXELS; i++){
-     pixels.setPixelColor(i, pixels.Color(0,0,255)); 
+     pixels.setPixelColor(i, pixels.Color(0,0,255*brightness)); 
   }
   pixels.show();
 }
 
 void redRing(){
   for (int i=0; i <= ALLPIXELS; i++){
-     pixels.setPixelColor(i, pixels.Color(255,0,0)); 
+     pixels.setPixelColor(i, pixels.Color(255*brightness,0,0)); 
   }
   pixels.show();
 }
 
 void greenRing(){
   for (int i=0; i <= ALLPIXELS; i++){
-     pixels.setPixelColor(i, pixels.Color(0,255,0)); 
+     pixels.setPixelColor(i, pixels.Color(0,255*brightness,0)); 
   }
   pixels.show();
 }
