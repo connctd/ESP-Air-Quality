@@ -303,10 +303,10 @@ void processPacket(coapPacket &packet, IPAddress ip, int port) {
       Serial.print(value);
       Serial.println(")");
 
-      if (actionName == "setGauge"){
+      if (String(actionName).equals("setGauge")){
         setGaugePercentage(value);     
       }
-      if (actionName == "setBrightness"){
+      if (String(actionName).equals("setBrightness")){
         setGaugeBrightness(value);
       }      
     }    
@@ -370,7 +370,6 @@ uint16_t sendCo2Value(){
 
   return sendJson();
 }
-
 
 uint16_t sendPressureValue(){
   jsonDoc.clear();
