@@ -18,10 +18,11 @@
  *                         |                      └ Sensoring
  *                         ├ Setup
  *                         ├ The Loop
+ *                         ├ System Functions
  *                         ├ Sensoring
  *                         ├ Connctd
  *                         ├ WiFi Management 
- *                         └ Gauge
+ *                         └ Gauge / LED-Ring
  * 
  * 
  */
@@ -46,7 +47,6 @@
 WiFiManager wm; 
 WiFiManagerParameter custom_field; 
 const char* AP_SSID = "Air-Quality";
-//bool connectedToWifi = false;
   
 
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
@@ -80,11 +80,15 @@ struct DeviceConfig {
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 unsigned int loopCnt = 0;
 
+
 // +++++++++++++++++++++++ Sensoring +++++++++++++++++++
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 
 Adafruit_BME280 bme; 
+
+bool buttonPressed = false;
+unsigned long buttonPressMillis = 0;
 
 float temperature = 0.0;
 float humidity = 0.0;
@@ -136,26 +140,9 @@ void initializeCoapClient(){
   coap.response(onServerMessage);
 }
 
-void loadDeviceConfig(){
-   Serial.println("Loading device settings"); 
-   EEPROM.get(0,deviceConfig);    
-   Serial.print("Device ID ");
-   Serial.println(deviceConfig.id);   
-}
-
-void saveDeviceConfig(){
-  EEPROM.put(0, deviceConfig);
-  if (EEPROM.commit()) {
-     Serial.println("Device configuration saved");
-  } else {
-     Serial.println("EEPROM error - Device Id and Device Code could not be saved");
-     errorRing();
-  }
-}
-
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//                                    THE LOOP
+//                                    THE LOOP 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 void loop() {
@@ -193,6 +180,96 @@ void loop() {
 
 }
 
+
+
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//                                 System Functions
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+void loadDeviceConfig(){
+   Serial.println("Loading device settings"); 
+   EEPROM.get(0,deviceConfig);    
+   Serial.print("Device ID ");
+   Serial.println(deviceConfig.id);   
+}
+
+
+void saveDeviceConfig(){
+  EEPROM.put(0, deviceConfig);
+  if (EEPROM.commit()) {
+     Serial.println("Device configuration saved");
+  } else {
+     Serial.println("EEPROM error - Device Id and Device Code could not be saved");
+     errorRing();
+  }
+}
+
+void checkButton(){  
+  
+  if(isButtonPressed()){     
+      if (!buttonPressed){ 
+        onButtonPressed();
+      } 
+  }    
+
+  if (buttonPressed) {
+    if (!isButtonPressed()){
+        onButtonReleased();
+        return;
+    }    
+    long pressedMillis = millis() - buttonPressMillis;
+    if(pressedMillis >= 15000){
+      errorRing();
+      resetConfiguration();
+      ESP.restart();
+      return;
+    }
+    if(pressedMillis >= 10000){
+      redRing();
+      return; 
+    }
+    if (pressedMillis >= 5000){
+      greenRing();
+    }
+  }
+}
+
+
+void onButtonPressed(){
+   Serial.println("Button pressed");
+   buttonPressed = true;
+   buttonPressMillis = millis();         
+}
+
+void onButtonReleased(){
+   long pressedMillis = millis() - buttonPressMillis;
+ 
+   buttonPressed = false;
+  
+   Serial.print("Button released (");
+   Serial.print(pressedMillis);
+   Serial.println("ms)");  
+
+   if (pressedMillis <= 1500) {   
+      triggerGaugeBrightness();
+      return;
+   }
+   if ((pressedMillis >= 5000) && (pressedMillis < 10000)){
+        startWiFiConfiguration(120);       
+   }
+   clearRing();
+   refreshGauge();
+}
+
+void resetConfiguration(){
+   Serial.println("Resetting Configuration");
+   wm.resetSettings();
+
+  // TODO - delete EEPROM
+}
+
+
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    Sensoring
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -228,6 +305,10 @@ bool readPressure(){
   bool res = (pressure != newPressure);
   pressure = newPressure;
   return res;
+}
+
+bool isButtonPressed(){
+  return  digitalRead(TRIGGER_PIN) == LOW ;
 }
 
 
@@ -309,6 +390,9 @@ void processPacket(coapPacket &packet, IPAddress ip, int port) {
       if (String(actionName).equals("setBrightness")){
         setGaugeBrightness(value);
       }      
+      if (String(actionName).equals("startConfig")){
+         startWiFiConfiguration(value);
+      }  
     }    
    
 }
@@ -428,48 +512,17 @@ bool connectToWiFi(){
   return res;
 }
 
-
-void checkButton(){  
-  // TODO  shitty solution, include that in loop somehow
-    if( digitalRead(TRIGGER_PIN) == LOW ){
-  
-        Serial.println("checking Button press");
-        delay(100);
-        if( digitalRead(TRIGGER_PIN) == LOW ){
-        Serial.println("Button Pressed");
-        greenRing();
-        delay(5000);
-        if (digitalRead(TRIGGER_PIN) != LOW ){
-          clearRing();
-          animateGauge(0,oldScaleValue);
-          return;
-        }
-        blueRing();
-        // still holding button for 3000 ms, reset settings, code not ideaa for production
-        delay(5000); // reset delay hold
-        if( digitalRead(TRIGGER_PIN) == LOW ){
-          Serial.println("Button held");
-          Serial.println("Erasing Config, restarting");
-          errorRing();
-          wm.resetSettings();
-          ESP.restart();
-        }
-      
-  
-        Serial.println("Starting config portal");
-        wm.setConfigPortalTimeout(120);     
-        if (!wm.startConfigPortal(AP_SSID,NULL)) {
-          Serial.println("failed to connect or hit timeout");          
-          errorRing();       
-          delay(3000);
-        } else {
-          //if you get here you have connected to the WiFi
-          Serial.println("connected...yeey :)");
-        }
-     
-      }
-    }
+void startWiFiConfiguration(int timeout){
+  Serial.print("Starting config portal (");
+  Serial.print(timeout);
+  Serial.println("s)");
+  wm.setConfigPortalTimeout(timeout);     
+  if (!wm.startConfigPortal(AP_SSID,NULL)) {
+     Serial.println("ERROR - failed to connect or hit timeout");          
+      errorRing();                 
+  }      
 }
+
 
 String getParam(String name){  
   String value;
@@ -525,12 +578,28 @@ void setGaugeBrightness(int value){
   Serial.print(value);
   Serial.println("%");  
   brightness = float(value)/100.F;
+  refreshGauge();
+  sendGaugeBrightnessValue();
+  
+}
+
+void triggerGaugeBrightness(){  
+    brightness -= 0.20F;
+    if (brightness > 0.0F && brightness <= 0.15F){
+      brightness = 0.05F;
+    }
+    if (brightness <= 0.0F){
+      brightness = 1.0F;
+    }
+    refreshGauge();
+    sendGaugeBrightnessValue();
+}
+
+void refreshGauge(){
   int as_mem = animationSpeed;  // remember animation speed, animation will be disabled temporarily
   animationSpeed = 0;
   animateGauge(0,oldScaleValue);
   animationSpeed = as_mem;
-  sendGaugeBrightnessValue();
-  
 }
 
 int getScaleValue(int value){
@@ -572,21 +641,21 @@ void clearRing(){
 
 void blueRing(){
   for (int i=0; i <= ALLPIXELS; i++){
-     pixels.setPixelColor(i, pixels.Color(0,0,255*brightness)); 
+     pixels.setPixelColor(i, pixels.Color(0,0,255)); 
   }
   pixels.show();
 }
 
 void redRing(){
   for (int i=0; i <= ALLPIXELS; i++){
-     pixels.setPixelColor(i, pixels.Color(255*brightness,0,0)); 
+     pixels.setPixelColor(i, pixels.Color(255,0,0)); 
   }
   pixels.show();
 }
 
 void greenRing(){
   for (int i=0; i <= ALLPIXELS; i++){
-     pixels.setPixelColor(i, pixels.Color(0,255*brightness,0)); 
+     pixels.setPixelColor(i, pixels.Color(0,255,0)); 
   }
   pixels.show();
 }
