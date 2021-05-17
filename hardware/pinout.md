@@ -17,7 +17,7 @@
 * SDA IO21
 * SCL IO22
 * RDY IO15
-* SEL IO2
+* SEL IO4
 
 ## User Button
 
