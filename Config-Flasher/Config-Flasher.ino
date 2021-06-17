@@ -15,7 +15,7 @@
 struct DeviceConfig {    
     char id[DEVICE_ID_SIZE];    
     unsigned char key[CHACHA_KEY_SIZE];
-} deviceConfig;
+};
 
 
 
@@ -47,23 +47,21 @@ void setup() {
   saveDeviceConfig();
   Serial.println("Perfekt, setting new id");
                      
-  deviceConfig = (DeviceConfig){ "abcdefghijklmnop",{  0x61, 0x3e, 0x28, 0x39, 0x88, 0x5d, 0xf2, 0xbe,
-                                                       0x74, 0x81, 0xb1, 0xc7, 0x3e, 0xe3, 0x8f, 0x36,
-                                                       0x19, 0x4f, 0xe0, 0xbc, 0xd3, 0xf2, 0x1d, 0xab,
-                                                       0x8a, 0x4c, 0x4a, 0x91, 0x7a, 0x97, 0x50, 0x5a }};
+ 
   Serial.print("DeviceID = ");
   Serial.println(deviceConfig.id);
 
-  loadDeviceConfig();
+  checkDeviceConfig();
   
   Serial.println("And Done... Bye!");
 }
 
-void loadDeviceConfig(){
+void checkDeviceConfig(){
+   DeviceConfig devconf;
    Serial.println("Loading device settings"); 
-   EEPROM.get(0,deviceConfig);    
+   EEPROM.get(0,devconf);    
    Serial.print("Device ID ");
-   Serial.println(deviceConfig.id);   
+   Serial.println(devconf.id);   
 }
 
 void saveDeviceConfig(){
