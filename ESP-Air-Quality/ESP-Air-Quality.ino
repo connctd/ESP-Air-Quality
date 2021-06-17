@@ -67,23 +67,9 @@ IPAddress ip(35,205,82,53);
 int port = 5683;
 
 struct DeviceConfig {    
-    char id[DEVICE_ID_SIZE] = "0xl7n4igwd4k8g2t";     // need one char more for String termination
-    unsigned char key[CHACHA_KEY_SIZE]= {                // unique device key
-  0x61, 0x3e, 0x28, 0x39, 0x88, 0x5d, 0xf2, 0xbe,
-  0x74, 0x81, 0xb1, 0xc7, 0x3e, 0xe3, 0x8f, 0x36,
-  0x19, 0x4f, 0xe0, 0xbc, 0xd3, 0xf2, 0x1d, 0xab,
-  0x8a, 0x4c, 0x4a, 0x91, 0x7a, 0x97, 0x50, 0x5a 
-};
+    char id[DEVICE_ID_SIZE];     // need one char more for String termination
+    unsigned char key[CHACHA_KEY_SIZE];
 } deviceConfig;
-
-char device_id[DEVICE_ID_SIZE] = "0xl7n4igwd4k8g2t";  // unique device id
-
-unsigned char key[CHACHA_KEY_SIZE] = {                // unique device key
-  0x61, 0x3e, 0x28, 0x39, 0x88, 0x5d, 0xf2, 0xbe,
-  0x74, 0x81, 0xb1, 0xc7, 0x3e, 0xe3, 0x8f, 0x36,
-  0x19, 0x4f, 0xe0, 0xbc, 0xd3, 0xf2, 0x1d, 0xab,
-  0x8a, 0x4c, 0x4a, 0x91, 0x7a, 0x97, 0x50, 0x5a 
-};
 
 MarconiClient *c;
 bool initialized = false;
@@ -132,7 +118,7 @@ void setup() {
 
   loadDeviceConfig();
   clearRing();
-  saveDeviceConfig();
+ // saveDeviceConfig();
   //initializeCoapClient();
   initMarconi();
   sensorsAvailable = initBME280();  
@@ -155,7 +141,9 @@ void initializeLedRing(){
 */
 
 void initMarconi(){
-   c = new MarconiClient(ip, port, device_id, key, onConnectionStateChange, onDebug, onErr);
+  Serial.println("initialize Marconi Library");
+  delay(2000);
+  c = new MarconiClient(ip, port, deviceConfig.id, deviceConfig.key, onConnectionStateChange, onDebug, onErr);
 }
 
 
@@ -212,15 +200,25 @@ bool loadDeviceConfig(){
    //Serial.println(deviceConfig.id);   
 
    Serial.println("Loading Device Config disabled, will set device settings manually.");
+  
+    char dev_id[DEVICE_ID_SIZE] = "0xl7n4igwd4k8g2t";     // need one char more for String termination
+    unsigned char dev_key[CHACHA_KEY_SIZE]= {  0x61, 0x3e, 0x28, 0x39, 0x88, 0x5d, 0xf2, 0xbe,
+                                               0x74, 0x81, 0xb1, 0xc7, 0x3e, 0xe3, 0x8f, 0x36,
+                                               0x19, 0x4f, 0xe0, 0xbc, 0xd3, 0xf2, 0x1d, 0xab,
+                                               0x8a, 0x4c, 0x4a, 0x91, 0x7a, 0x97, 0x50, 0x5a 
+                                            };
 
-   
+  deviceConfig.id = dev_id;
+  deviceConfig.key = dev_key;
+  
 }
 
 
 void saveDeviceConfig(){
+  Serial.print("save device configuration ... ");
   EEPROM.put(0, deviceConfig);
   if (EEPROM.commit()) {
-     Serial.println("Device configuration saved");
+     Serial.println("OK");
   } else {
      Serial.println("EEPROM error - Device Id and Device Code could not be saved");
      errorRing();
@@ -457,7 +455,7 @@ void onConnectionStateChange(const unsigned char state) {
         initialized = false;
 
         // after reinit we want to resubscribe
-        lastResubscribe = 0;
+       // lastResubscribe = 0;
         break;
       default:
         Serial.printf("Unknown connection event %x\n", state);
@@ -489,35 +487,6 @@ void onErr(const unsigned char error) {
             break;
     }
 }
-
-// requestes a session id from connector which will be exchanged in every
-// message to prevent replay attacks. Can be called multiple times
-void blockingInitSession() {
-  initialized = false;
-  Serial.println("Initializing session");
-  
-  int retries = 0;
-  c->init();
-  while (!initialized) {
-    if (retries > 10) {
-      Serial.println("\nSession can not be established. Resending init");
-      retries = 0;
-      if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("No wifi connection. Abort session init");
-        return;
-      }
-      c->init();
-    }
-
-    Serial.print(".");
-    retries += 1;
-    c->loop();
-    delay(200);
-  }
-
-  Serial.println("");
-}
-
 
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -579,7 +548,7 @@ String getParam(String name){
 void saveParamCallback(){
   Serial.println("[CALLBACK] saveParamCallback fired");
  
-  String deviceId = getParam("deviceId");
+/*  String deviceId = getParam("deviceId");
   deviceId.toCharArray(deviceConfig.id,9);
   deviceConfig.id[8] = '\0';
   String deviceCode = getParam("deviceCode");
@@ -587,7 +556,7 @@ void saveParamCallback(){
   deviceConfig.code[4] = '\0';
 
   Serial.println("deviceId   = " + String(deviceConfig.id));
-  Serial.println("deviceCode = " + String(deviceConfig.code));
+  Serial.println("deviceCode = " + String(deviceConfig.code));*/
   saveDeviceConfig();
 }
 
@@ -604,7 +573,7 @@ void setGaugePercentage(int value){
   Serial.print("setting new value: ");
   Serial.println(value);
   gaugeValue = value;
-  sendGaugeValue();
+  //sendGaugeValue();
   
   if (value == 0){
     clearRing();
