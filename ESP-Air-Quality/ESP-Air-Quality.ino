@@ -99,16 +99,20 @@ bool sensorsAvailable = false;
 void setup() {
   
   Serial.begin(115200);
-  Serial.setDebugOutput(true);   
+//  Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
 
-  pinMode(TRIGGER_PIN, INPUT);
+  //pinMode(TRIGGER_PIN, INPUT);
 
   EEPROM.begin(512);
 
-  loadDeviceConfig();
-  saveDeviceConfig();
-  
+  delay(1000);
+  loadDeviceConfig();  
+  Serial.println("back in setup()");
+  Serial.println("rumdödeln");
+  delay(2000);
+  Serial.println("und weiter!");
+ /* 
   initializeRandomSeed();
   initializeLedRing();   
   initializeWiFi(); 
@@ -122,6 +126,7 @@ void setup() {
   clearRing();
   
   sensorsAvailable = initBME280();  
+  */
 }
 
 void initializeRandomSeed(){
@@ -132,13 +137,6 @@ void initializeLedRing(){
   pixels.begin(); 
   clearRing();  
 }
-
-/*void initializeCoapClient(){
-  buildPaths();
-  coap.start(port);    
-  coap.response(onServerMessage);
-}
-*/
 
 void initMarconi(){
   Serial.println("initialize Marconi Library");
@@ -152,6 +150,7 @@ void initMarconi(){
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 void loop() {
+  /*
   checkButton(); // check wether trigger button was pressed  
 
   if ((loopCnt % 5000) == 0){ // every 50s
@@ -183,7 +182,7 @@ void loop() {
   }
   
   delay(10);
-
+*/
 }
 
 
@@ -194,28 +193,20 @@ void loop() {
 
 
 bool loadDeviceConfig(){
-   //Serial.println("Loading device settings"); 
-   //EEPROM.get(0,deviceConfig);    
-   //Serial.print("Device ID ");
-   //Serial.println(deviceConfig.id);   
-
-   Serial.println("Loading Device Config disabled, will set device settings manually.");
-  
-    char dev_id[DEVICE_ID_SIZE] = "0xl7n4igwd4k8g2t";     // need one char more for String termination
-    unsigned char dev_key[CHACHA_KEY_SIZE]= {  0x61, 0x3e, 0x28, 0x39, 0x88, 0x5d, 0xf2, 0xbe,
-                                               0x74, 0x81, 0xb1, 0xc7, 0x3e, 0xe3, 0x8f, 0x36,
-                                               0x19, 0x4f, 0xe0, 0xbc, 0xd3, 0xf2, 0x1d, 0xab,
-                                               0x8a, 0x4c, 0x4a, 0x91, 0x7a, 0x97, 0x50, 0x5a 
-                                            };
-
-  deviceConfig = (DeviceConfig){"0xl7n4igwd4k8g2t", {  0x61, 0x3e, 0x28, 0x39, 0x88, 0x5d, 0xf2, 0xbe,
-                                               0x74, 0x81, 0xb1, 0xc7, 0x3e, 0xe3, 0x8f, 0x36,
-                                               0x19, 0x4f, 0xe0, 0xbc, 0xd3, 0xf2, 0x1d, 0xab,
-                                               0x8a, 0x4c, 0x4a, 0x91, 0x7a, 0x97, 0x50, 0x5a 
-                                            }}; 
-
- // deviceConfig.id = dev_id;
- // deviceConfig.key = dev_key;
+   Serial.println("loading device configuration"); 
+   Serial.println(DEVICE_ID_SIZE);
+   Serial.println(CHACHA_KEY_SIZE);
+   EEPROM.get(0,deviceConfig);      
+   Serial.print("Device ID = ");
+   Serial.println(deviceConfig.id);         
+   Serial.println(sizeof(deviceConfig.id));
+   Serial.println(sizeof(deviceConfig.key));
+   Serial.println(" -- key --");
+   for (int i = 0; i < CHACHA_KEY_SIZE; i++){
+      Serial.print( deviceConfig.key[i],HEX);
+      Serial.print(" ");
+   }
+   Serial.println(" ---------");
   
 }
 
@@ -502,7 +493,7 @@ void onErr(const unsigned char error) {
 
 void initializeWiFi(){ 
   int customFieldLength = 40;  
-  const char* custom_radio_str = "<br/><br/>Please enter Device ID <br/> <input type='text' name='deviceId' id='deviceId'/><br/>Please enter Device Code <br/> <input type='text' name='deviceCode' id='deviceCode'/>";  
+  const char* custom_radio_str = "<br/><br/>Please enter your postal code <br/> <input type='text' name='postcode' id='postcode'/>";  
   new (&custom_field) WiFiManagerParameter(custom_radio_str); // custom html input  
   wm.addParameter(&custom_field);
   wm.setSaveParamsCallback(saveParamCallback);
