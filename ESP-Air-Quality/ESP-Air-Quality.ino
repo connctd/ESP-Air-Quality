@@ -35,21 +35,19 @@
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
 #include <ESP8266TrueRandom.h>
 #include <EEPROM.h>
-#include <Wire.h>
-#include <SPI.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
-#define TRIGGER_PIN D6
+#define TRIGGER_PIN D4
 WiFiManager wm; 
 WiFiManagerParameter custom_field; 
 const char* AP_SSID = "Air-Quality";
   
 
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
-#define LED_PIN   D4
+#define LED_PIN   D7
 #define NUMPIXELS 13
 #define ALLPIXELS 28
 
@@ -69,8 +67,10 @@ int port = 5683;
 struct DeviceConfig {    
     char id[DEVICE_ID_SIZE];    
     unsigned char key[CHACHA_KEY_SIZE];
-} deviceConfig;
+};
 
+
+DeviceConfig deviceConfig;
 MarconiClient *c;
 bool initialized = false;
 
@@ -101,18 +101,12 @@ void setup() {
   Serial.begin(115200);
 //  Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
-
   //pinMode(TRIGGER_PIN, INPUT);
 
   EEPROM.begin(512);
 
-  delay(1000);
   loadDeviceConfig();  
-  Serial.println("back in setup()");
-  Serial.println("rumdödeln");
-  delay(2000);
-  Serial.println("und weiter!");
- /* 
+ 
   initializeRandomSeed();
   initializeLedRing();   
   initializeWiFi(); 
@@ -126,7 +120,7 @@ void setup() {
   clearRing();
   
   sensorsAvailable = initBME280();  
-  */
+  
 }
 
 void initializeRandomSeed(){
@@ -206,8 +200,8 @@ bool loadDeviceConfig(){
       Serial.print( deviceConfig.key[i],HEX);
       Serial.print(" ");
    }
+   Serial.println();
    Serial.println(" ---------");
-  
 }
 
 

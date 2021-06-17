@@ -17,6 +17,8 @@ struct DeviceConfig {
     unsigned char key[CHACHA_KEY_SIZE];
 };
 
+DeviceConfig deviceConfig;
+
 
 
 
@@ -45,11 +47,6 @@ void setup() {
   Serial.print("DeviceID = ");
   Serial.println(deviceConfig.id);
   saveDeviceConfig();
-  Serial.println("Perfekt, setting new id");
-                     
- 
-  Serial.print("DeviceID = ");
-  Serial.println(deviceConfig.id);
 
   checkDeviceConfig();
   
@@ -60,8 +57,14 @@ void checkDeviceConfig(){
    DeviceConfig devconf;
    Serial.println("Loading device settings"); 
    EEPROM.get(0,devconf);    
-   Serial.print("Device ID ");
+   Serial.print("Device ID = ");
    Serial.println(devconf.id);   
+   Serial.print("Device Key = ");
+   for (int i = 0; i < CHACHA_KEY_SIZE; i++){
+      Serial.print(devconf.key[i],HEX);
+      Serial.print(" ");
+   }
+   Serial.println();
 }
 
 void saveDeviceConfig(){
@@ -77,5 +80,6 @@ void saveDeviceConfig(){
 
 void loop() {
   // put your main code here, to run repeatedly:
-
+  Serial.println("---");
+  delay(1000);
 }
