@@ -67,7 +67,7 @@ IPAddress ip(35,205,82,53);
 int port = 5683;
 
 struct DeviceConfig {    
-    char id[DEVICE_ID_SIZE];     // need one char more for String termination
+    char id[DEVICE_ID_SIZE];    
     unsigned char key[CHACHA_KEY_SIZE];
 } deviceConfig;
 
@@ -106,21 +106,21 @@ void setup() {
 
   EEPROM.begin(512);
 
+  loadDeviceConfig();
+  saveDeviceConfig();
+  
   initializeRandomSeed();
   initializeLedRing();   
   initializeWiFi(); 
-  
   
   // ToDo - make non blocking and animate "connecting gauge"
   if (!connectToWiFi()){    
     ESP.restart();
   }
 
-  loadDeviceConfig();
-  clearRing();
- // saveDeviceConfig();
-  //initializeCoapClient();
   initMarconi();
+  clearRing();
+  
   sensorsAvailable = initBME280();  
 }
 
@@ -208,8 +208,14 @@ bool loadDeviceConfig(){
                                                0x8a, 0x4c, 0x4a, 0x91, 0x7a, 0x97, 0x50, 0x5a 
                                             };
 
-  deviceConfig.id = dev_id;
-  deviceConfig.key = dev_key;
+  deviceConfig = (DeviceConfig){"0xl7n4igwd4k8g2t", {  0x61, 0x3e, 0x28, 0x39, 0x88, 0x5d, 0xf2, 0xbe,
+                                               0x74, 0x81, 0xb1, 0xc7, 0x3e, 0xe3, 0x8f, 0x36,
+                                               0x19, 0x4f, 0xe0, 0xbc, 0xd3, 0xf2, 0x1d, 0xab,
+                                               0x8a, 0x4c, 0x4a, 0x91, 0x7a, 0x97, 0x50, 0x5a 
+                                            }}; 
+
+ // deviceConfig.id = dev_id;
+ // deviceConfig.key = dev_key;
   
 }
 
