@@ -73,6 +73,10 @@ struct DeviceConfig {
 DeviceConfig deviceConfig;
 MarconiClient *c;
 bool initialized = false;
+unsigned long resubscribeInterval = 60000; // in ms
+unsigned long propertyUpdateInterval = 30000; // in ms
+unsigned long lastResubscribe = 0; // periodically resubscribe
+unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 unsigned int loopCnt = 0;
@@ -101,7 +105,7 @@ void setup() {
   Serial.begin(115200);
 //  Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
-  //pinMode(TRIGGER_PIN, INPUT);
+  pinMode(TRIGGER_PIN, INPUT);
 
   EEPROM.begin(512);
 
@@ -119,8 +123,7 @@ void setup() {
   initMarconi();
   clearRing();
   
-  sensorsAvailable = initBME280();  
-  
+  sensorsAvailable = initBME280();    
 }
 
 void initializeRandomSeed(){
@@ -143,30 +146,36 @@ void initMarconi(){
 //                                    THE LOOP 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-void loop() {
-  
+void loop() {  
   checkButton(); // check wether trigger button was pressed  
-
-  if ((loopCnt % 5000) == 0){ // every 50s
-    
+  if (!initialized) {
+      blockingInitSession();
   }
-
-  if ((loopCnt % 3000) == 0){  // every 30s        
-//    sendCo2Value();    
-    sendGaugeBrightnessValue();
-    if (sensorsAvailable) {
-       if (readTemperature()){
-      //  sendTemperatureValue();
-      }
-      if (readHumidity()){
-        //sendHumidityValue();
-      }
-      if (readPressure()){
-        //sendPressureValue();
-      }
+  unsigned long currTime = millis();
+  
+  if (initialized){ 
+    // resubscribe if necessary
+    if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
+      lastResubscribe = currTime;
+      c->subscribeForActions(onAction);
+    }
+    // periodically send property updates
+    if (currTime - lastPropertyUpdate > propertyUpdateInterval) {
+      lastPropertyUpdate = currTime;
+      sendGaugeBrightnessValue();
+      if (sensorsAvailable) {
+        if (readTemperature()){
+          sendTemperatureValue();
+        }
+        if (readHumidity()){
+          sendHumidityValue();
+        }
+        if (readPressure()){
+          sendPressureValue();
+        }
+      }      
     }
   }
-  
   
   loopCnt++;
 
@@ -174,6 +183,7 @@ void loop() {
   if (loopCnt > 65535){ // when 16bit max have been reached - do not care about 32bit systems
     loopCnt = 0;
   }
+  c->loop();
   
   delay(10);
 
@@ -354,59 +364,30 @@ void blockingInitSession() {
   Serial.println("");
 }
 
-/*
-uint16_t sendHumidityValue(){
-  jsonDoc.clear();
-  jsonDoc["value"] = String(humidity);
-  jsonDoc["id"] = "humidity";
-  return sendJson();  
+
+void sendHumidityValue(){
+  c->sendFloatPropertyUpdate("humidity", humidity);
 }
 
-uint16_t sendTemperatureValue(){
-  jsonDoc.clear();
-  jsonDoc["value"] = String(temperature);
-  jsonDoc["id"] = "temperature";
-
-  return sendJson();
+void sendTemperatureValue(){
+   c->sendFloatPropertyUpdate("temperature", temperature);
 }
 
-uint16_t sendCo2Value(){
-  jsonDoc.clear();
-  jsonDoc["value"] = "865";
-  jsonDoc["id"] = "co2";
-
-  return sendJson();
+void sendPressureValue(){
+ c->sendFloatPropertyUpdate("pressure", pressure);
 }
 
-uint16_t sendPressureValue(){
-  jsonDoc.clear();
-  jsonDoc["value"] = String(pressure);
-  jsonDoc["id"] = "pressure";
-  return sendJson();
+void sendGaugeBrightnessValue(){
+ //  c->sendFloatPropertyUpdate("brightness", brightnes);
 }
 
-uint16_t sendGaugeBrightnessValue(){
-  jsonDoc.clear();
-  jsonDoc["value"] = String(brightness*100);
-  jsonDoc["id"] = "brightness";
-  return sendJson();
+void sendGaugeValue(){
+   //c->sendIntPropertyUpdate("gauge", gaugeValue);
 }
 
-uint16_t sendGaugeValue(){
-  jsonDoc.clear();
-  jsonDoc["value"] = String(gaugeValue);
-  jsonDoc["id"] = "gauge";
-  return sendJson();
-}
-
-*/
-
-uint16_t sendGaugeBrightnessValue(){
-  return 1;
-}
 
 // called whenever an action is invoked
-void onAction(unsigned char actionId, char *value) {
+void onAction(char *actionId, char *value) {
   Serial.printf("Action called. Id: %x Value: %s\n", actionId, value);
 }
 
@@ -444,7 +425,7 @@ void onConnectionStateChange(const unsigned char state) {
         initialized = false;
 
         // after reinit we want to resubscribe
-       // lastResubscribe = 0;
+        lastResubscribe = 0;
         break;
       default:
         Serial.printf("Unknown connection event %x\n", state);
