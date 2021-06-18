@@ -76,6 +76,7 @@ bool initialized = false;
 unsigned long resubscribeInterval = 60000; // in ms
 unsigned long propertyUpdateInterval = 30000; // in ms
 unsigned long lastResubscribe = 0; // periodically resubscribe
+unsigned long lastInitTry = 0;
 unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 
 // +++++++++++++++++++++++ General +++++++++++++++++++++
@@ -147,11 +148,16 @@ void initMarconi(){
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 void loop() {  
+  unsigned long currTime = millis();
   checkButton(); // check wether trigger button was pressed  
   if (!initialized) {
-      blockingInitSession();
+      if (currTime - lastInitTry > 10000){
+        lastInitTry = currTime;
+        blockingInitSession();    
+        
+      }
   }
-  unsigned long currTime = millis();
+  
   
   if (initialized){ 
     // resubscribe if necessary
