@@ -40,14 +40,14 @@
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
-#define TRIGGER_PIN D4
+#define TRIGGER_PIN D6
 WiFiManager wm; 
 WiFiManagerParameter custom_field; 
 const char* AP_SSID = "Air-Quality";
   
 
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
-#define LED_PIN   D7
+#define LED_PIN   D4
 #define NUMPIXELS 13
 #define ALLPIXELS 28
 
@@ -144,7 +144,7 @@ void initMarconi(){
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 void loop() {
-  /*
+  
   checkButton(); // check wether trigger button was pressed  
 
   if ((loopCnt % 5000) == 0){ // every 50s
@@ -176,7 +176,7 @@ void loop() {
   }
   
   delay(10);
-*/
+
 }
 
 
@@ -276,8 +276,6 @@ void onButtonReleased(){
 void resetConfiguration(){
    Serial.println("Resetting Configuration");
    wm.resetSettings();
-
-  // TODO - delete EEPROM
 }
 
 
@@ -548,7 +546,7 @@ void saveParamCallback(){
 
   Serial.println("deviceId   = " + String(deviceConfig.id));
   Serial.println("deviceCode = " + String(deviceConfig.code));*/
-  saveDeviceConfig();
+  //saveDeviceConfig();
 }
 
 void configModeCallback (WiFiManager *myWiFiManager) {

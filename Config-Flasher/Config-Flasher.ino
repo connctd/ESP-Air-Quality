@@ -19,12 +19,9 @@ struct DeviceConfig {
 
 DeviceConfig deviceConfig;
 
-
-
-
 void setup() {
   Serial.begin(115200);
-  Serial.setDebugOutput(true); 
+  //Serial.setDebugOutput(true); 
 
   Serial.print("Geht los in 3");
   delay(2000);
@@ -43,7 +40,7 @@ void setup() {
                                                        0x19, 0x4f, 0xe0, 0xbc, 0xd3, 0xf2, 0x1d, 0xab,
                                                        0x8a, 0x4c, 0x4a, 0x91, 0x7a, 0x97, 0x50, 0x5a }}; 
 
-  Serial.println("Device Config generated");
+  Serial.println("DeviceConfig generated");
   Serial.print("DeviceID = ");
   Serial.println(deviceConfig.id);
   saveDeviceConfig();
@@ -79,7 +76,5 @@ void saveDeviceConfig(){
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  Serial.println("---");
-  delay(1000);
+
 }
