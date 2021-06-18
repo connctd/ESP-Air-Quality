@@ -79,6 +79,13 @@ unsigned long lastResubscribe = 0; // periodically resubscribe
 unsigned long lastInitTry = 0;
 unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 
+byte property_gauge = 0x01;
+byte property_co2 = 0x02;
+byte property_temperature = 0x03;
+byte property_humidity = 0x04;
+byte property_brightnes = 0x05;
+byte property_pressure = 0x06;
+
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 unsigned int loopCnt = 0;
 
@@ -372,34 +379,33 @@ void blockingInitSession() {
 
 
 void sendHumidityValue(){
-  c->sendFloatPropertyUpdate("humidity", humidity);
+  c->sendFloatPropertyUpdate(property_humidity, humidity);
 }
 
 void sendTemperatureValue(){
-   c->sendFloatPropertyUpdate("temperature", temperature);
+   c->sendFloatPropertyUpdate(property_temperature, temperature);
 }
 
 void sendPressureValue(){
- c->sendFloatPropertyUpdate("pressure", pressure);
+ c->sendFloatPropertyUpdate(property_pressure, pressure);
 }
 
 void sendGaugeBrightnessValue(){
- //  c->sendFloatPropertyUpdate("brightness", brightnes);
+   c->sendFloatPropertyUpdate(property_brightnes, brightness);
 }
 
 void sendGaugeValue(){
    //c->sendIntPropertyUpdate("gauge", gaugeValue);
 }
 
-
 // called whenever an action is invoked
-void onAction(char *actionId, char *value) {
+void onAction(unsigned char actionId, char *value) {
   Serial.printf("Action called. Id: %x Value: %s\n", actionId, value);
 }
 
 // called whenever marconi lib sends debug data
 void onDebug(const char *msg) {
-    Serial.printf("[DEBUG] %s\n", msg);
+    //Serial.printf("[DEBUG] %s\n", msg);
 } 
 
 // called whenever connection state changes
@@ -463,8 +469,6 @@ void onErr(const unsigned char error) {
             break;
     }
 }
-
-
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    WiFi Manager
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
