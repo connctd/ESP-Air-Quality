@@ -40,7 +40,7 @@
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
-#define TRIGGER_PIN A6
+#define TRIGGER_PIN 6
 WiFiManager wm; 
 WiFiManagerParameter custom_field; 
 const char* AP_SSID = "Air-Quality";
