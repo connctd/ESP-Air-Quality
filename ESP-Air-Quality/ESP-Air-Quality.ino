@@ -116,7 +116,7 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
-  //pinMode(TRIGGER_PIN, INPUT);
+  pinMode(TRIGGER_PIN, INPUT);
 
   if (!deviceConfigMemory.begin(0x500)){
     Serial.println("ERROR - Failed to initialize EEPROM");
@@ -164,7 +164,7 @@ void initMarconi(){
 
 void loop() {  
   unsigned long currTime = millis();
-  //checkButton(); // check wether trigger button was pressed  
+  checkButton(); // check wether trigger button was pressed  
   if (!initialized) {
       if (currTime - lastInitTry > 10000){
         lastInitTry = currTime;
@@ -181,10 +181,11 @@ void loop() {
       c->subscribeForActions(onAction);
     }
     // periodically send property updates
-    if (currTime - lastPropertyUpdate > propertyUpdateInterval) {
+    if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
       lastPropertyUpdate = currTime;
       sendGaugeBrightnessValue();
       if (sensorsAvailable) {
+        Serial.println("Reading Sensor values");
         if (readTemperature()){
           sendTemperatureValue();
         }
@@ -332,6 +333,9 @@ bool readTemperature(){
   float newTemperature = float(int(bme.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
   bool res = (temperature != newTemperature);
   temperature = newTemperature;
+  Serial.print("temperature = ");
+  Serial.println(temperature);
+  
   return res;
 }
 
@@ -339,6 +343,8 @@ bool readHumidity(){
   float newHumidity = int(bme.readHumidity()); // ignore values after . 
   bool res (humidity != newHumidity);
   humidity = newHumidity;
+  Serial.print("humidity = ");
+  Serial.println(humidity);  
   return res;
 }
 
@@ -346,6 +352,9 @@ bool readPressure(){
   float newPressure = int(bme.readPressure())/100; 
   bool res = (pressure != newPressure);
   pressure = newPressure;
+  Serial.print("pressure = ");
+  Serial.println(pressure);
+  
   return res;
 }
 
