@@ -116,7 +116,7 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
-  pinMode(TRIGGER_PIN, INPUT);
+  //pinMode(TRIGGER_PIN, INPUT);
 
   if (!deviceConfigMemory.begin(0x500)){
     Serial.println("ERROR - Failed to initialize EEPROM");
@@ -196,6 +196,7 @@ void loop() {
         }
       }      
     }
+    
   }
   
   loopCnt++;
