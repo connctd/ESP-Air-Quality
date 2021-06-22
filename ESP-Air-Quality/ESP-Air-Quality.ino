@@ -118,7 +118,7 @@ void setup() {
   Serial.println("\n Starting");
   pinMode(TRIGGER_PIN, INPUT);
 
-  if (!deviceConfigMemory.begin(128)){
+  if (!deviceConfigMemory.begin(0x500)){
     Serial.println("ERROR - Failed to initialize EEPROM");
     Serial.println("ESP will be restarted");
     ESP.restart();
@@ -139,11 +139,6 @@ void setup() {
   clearRing();
   
   sensorsAvailable = initBME280();    
-}
-
-bool initEeprom(){
-  Serial.println("Initializing EEPROM for device configuration");
-  return deviceConfigMemory.begin(deviceConfigMemory.length());
 }
 
 void initializeRandomSeed(){
@@ -169,7 +164,7 @@ void initMarconi(){
 
 void loop() {  
   unsigned long currTime = millis();
-  checkButton(); // check wether trigger button was pressed  
+  //checkButton(); // check wether trigger button was pressed  
   if (!initialized) {
       if (currTime - lastInitTry > 10000){
         lastInitTry = currTime;

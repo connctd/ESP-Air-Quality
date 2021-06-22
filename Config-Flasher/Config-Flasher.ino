@@ -19,7 +19,7 @@ struct DeviceConfig {
 
 DeviceConfig deviceConfig;
 
-EEPROMClass  devConfigMemory("devConfig", 128);
+EEPROMClass  devConfigMemory("devConfig", 0x500);
 
 void setup() {
   Serial.begin(115200);
@@ -32,7 +32,7 @@ void setup() {
   delay(2000);
 
   Serial.println("Initialize EEPROM");
-  devConfigMemory.begin(128);
+  devConfigMemory.begin(devConfigMemory.length());
 
   Serial.println("generating DeviceConfig object");
   delay(1000);
