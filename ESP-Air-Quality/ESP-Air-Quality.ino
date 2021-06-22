@@ -28,26 +28,26 @@
  */
 
 
-
-#include <ESP8266WiFi.h>
+#include <EEPROM.h>
+//#include <WiFi.h>
 #include "marconi_client.h"
 #include <Adafruit_NeoPixel.h>
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
-#include <ESP8266TrueRandom.h>
-#include <EEPROM.h>
+//#include <ESP8266TrueRandom.h>
+
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
-#define TRIGGER_PIN D6
+#define TRIGGER_PIN A6
 WiFiManager wm; 
 WiFiManagerParameter custom_field; 
 const char* AP_SSID = "Air-Quality";
   
 
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
-#define LED_PIN   D4
+#define LED_PIN   4
 #define NUMPIXELS 13
 #define ALLPIXELS 28
 
@@ -71,6 +71,9 @@ struct DeviceConfig {
 
 
 DeviceConfig deviceConfig;
+EEPROMClass  deviceConfigMemory("devConfig", 128);
+
+
 MarconiClient *c;
 bool initialized = false;
 unsigned long resubscribeInterval = 60000; // in ms
@@ -111,11 +114,15 @@ bool sensorsAvailable = false;
 void setup() {
   
   Serial.begin(115200);
-//  Serial.setDebugOutput(true);   
+  Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
   pinMode(TRIGGER_PIN, INPUT);
 
-  EEPROM.begin(512);
+  if (!deviceConfigMemory.begin(128)){
+    Serial.println("ERROR - Failed to initialize EEPROM");
+    Serial.println("ESP will be restarted");
+    ESP.restart();
+  }
 
   loadDeviceConfig();  
  
@@ -134,8 +141,14 @@ void setup() {
   sensorsAvailable = initBME280();    
 }
 
+bool initEeprom(){
+  Serial.println("Initializing EEPROM for device configuration");
+  return deviceConfigMemory.begin(deviceConfigMemory.length());
+}
+
 void initializeRandomSeed(){
-    srand(ESP8266TrueRandom.random());
+    //srand(ESP8266TrueRandom.random());
+     srand (analogRead(0));
 }
 
 void initializeLedRing(){
@@ -213,7 +226,7 @@ bool loadDeviceConfig(){
    Serial.println("loading device configuration"); 
    Serial.println(DEVICE_ID_SIZE);
    Serial.println(CHACHA_KEY_SIZE);
-   EEPROM.get(0,deviceConfig);      
+   deviceConfigMemory.get(0,deviceConfig);      
    Serial.print("Device ID = ");
    Serial.println(deviceConfig.id);         
    Serial.println(sizeof(deviceConfig.id));
@@ -227,10 +240,10 @@ bool loadDeviceConfig(){
    Serial.println(" ---------");
 }
 
-
+/*
 void saveDeviceConfig(){
   Serial.print("save device configuration ... ");
-  EEPROM.put(0, deviceConfig);
+  deviceConfigMemory.put(0, deviceConfig);
   if (EEPROM.commit()) {
      Serial.println("OK");
   } else {
@@ -238,6 +251,7 @@ void saveDeviceConfig(){
      errorRing();
   }
 }
+*/
 
 void checkButton(){  
   

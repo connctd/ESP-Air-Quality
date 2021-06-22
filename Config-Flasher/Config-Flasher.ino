@@ -19,9 +19,10 @@ struct DeviceConfig {
 
 DeviceConfig deviceConfig;
 
+EEPROMClass  devConfigMemory("devConfig", 128);
+
 void setup() {
   Serial.begin(115200);
-  //Serial.setDebugOutput(true); 
 
   Serial.print("Geht los in 3");
   delay(2000);
@@ -31,7 +32,7 @@ void setup() {
   delay(2000);
 
   Serial.println("Initialize EEPROM");
-  EEPROM.begin(512);
+  devConfigMemory.begin(128);
 
   Serial.println("generating DeviceConfig object");
   delay(1000);
@@ -53,7 +54,7 @@ void setup() {
 void checkDeviceConfig(){
    DeviceConfig devconf;
    Serial.println("Loading device settings"); 
-   EEPROM.get(0,devconf);    
+   devConfigMemory.get(0,devconf);    
    Serial.print("Device ID = ");
    Serial.println(devconf.id);   
    Serial.print("Device Key = ");
@@ -66,8 +67,8 @@ void checkDeviceConfig(){
 
 void saveDeviceConfig(){
   Serial.print("Save device configuration ... ");
-  EEPROM.put(0, deviceConfig);
-  if (EEPROM.commit()) {
+  devConfigMemory.put(0, deviceConfig);
+  if (devConfigMemory.commit()) {
      Serial.println("OK");
   } else {
      Serial.println("EEPROM error - Device Id and Device Code could not be saved");
@@ -76,5 +77,5 @@ void saveDeviceConfig(){
 }
 
 void loop() {
-
+  delay(0xFFFFFFFF);
 }
