@@ -28,29 +28,26 @@
  */
 
 
-
-#include <ESP8266WiFi.h>
+#include <EEPROM.h>
+//#include <WiFi.h>
+#include "marconi_client.h"
 #include <Adafruit_NeoPixel.h>
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
-#include <ArduinoJson.h>
-#include <ESP8266TrueRandom.h>
-#include "coap_client.h"
-#include <EEPROM.h>
-#include <Wire.h>
-#include <SPI.h>
+//#include <ESP8266TrueRandom.h>
+
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
-#define TRIGGER_PIN D6
-WiFiManager wm; 
+#define TRIGGER_PIN 14
+WiFiManager wm;   
 WiFiManagerParameter custom_field; 
 const char* AP_SSID = "Air-Quality";
   
 
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
-#define LED_PIN   D4
+#define LED_PIN   25
 #define NUMPIXELS 13
 #define ALLPIXELS 28
 
@@ -64,18 +61,33 @@ float brightness = 1.0F;   // value between 0 (off) and 1 (full brightness)
 
 // +++++++++++++++++++++++ Connctd +++++++++++++++++++++
 
-coapClient coap;
 IPAddress ip(35,205,82,53);
-StaticJsonDocument<200> jsonDoc;
 int port = 5683;
-char* actionPath = " api/v1/devices/xxxxxxxx/xxxx/action";
-char* propertyPath = " api/v1/devices/xxxxxxxx/xxxx/status";
 
 struct DeviceConfig {    
-    char id[9];     // need one char more for String termination
-    char code[5];   // same here 
-} deviceConfig;
+    char id[DEVICE_ID_SIZE];    
+    unsigned char key[CHACHA_KEY_SIZE];
+};
 
+
+DeviceConfig deviceConfig;
+EEPROMClass  deviceConfigMemory("devConfig", 128);
+
+
+MarconiClient *c;
+bool initialized = false;
+unsigned long resubscribeInterval = 60000; // in ms
+unsigned long propertyUpdateInterval = 30000; // in ms
+unsigned long lastResubscribe = 0; // periodically resubscribe
+unsigned long lastInitTry = 0;
+unsigned long lastPropertyUpdate = 0; // time when property updates were sent
+
+byte property_gauge = 0x01;
+byte property_co2 = 0x02;
+byte property_temperature = 0x03;
+byte property_humidity = 0x04;
+byte property_brightnes = 0x05;
+byte property_pressure = 0x06;
 
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 unsigned int loopCnt = 0;
@@ -104,11 +116,16 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
-
   pinMode(TRIGGER_PIN, INPUT);
 
-  EEPROM.begin(512);
+  if (!deviceConfigMemory.begin(0x500)){
+    Serial.println("ERROR - Failed to initialize EEPROM");
+    Serial.println("ESP will be restarted");
+    ESP.restart();
+  }
 
+  loadDeviceConfig();  
+ 
   initializeRandomSeed();
   initializeLedRing();   
   initializeWiFi(); 
@@ -118,15 +135,15 @@ void setup() {
     ESP.restart();
   }
 
-  loadDeviceConfig();
+  initMarconi();
   clearRing();
-  initializeCoapClient();
-
-  sensorsAvailable = initBME280();  
+  
+  sensorsAvailable = initBME280();    
 }
 
 void initializeRandomSeed(){
-    srand(ESP8266TrueRandom.random());
+    //srand(ESP8266TrueRandom.random());
+     srand (analogRead(0));
 }
 
 void initializeLedRing(){
@@ -134,10 +151,10 @@ void initializeLedRing(){
   clearRing();  
 }
 
-void initializeCoapClient(){
-  buildPaths();
-  coap.start(port);    
-  coap.response(onServerMessage);
+void initMarconi(){
+  Serial.println("initialize Marconi Library");
+  delay(2000);
+  c = new MarconiClient(ip, port, deviceConfig.id, deviceConfig.key, onConnectionStateChange, onDebug, onErr);
 }
 
 
@@ -145,36 +162,51 @@ void initializeCoapClient(){
 //                                    THE LOOP 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-void loop() {
+void loop() {  
+  unsigned long currTime = millis();
   checkButton(); // check wether trigger button was pressed  
-
-  if ((loopCnt % 5000) == 0){ // every 50s
-    registerForAction();
-  }
-
-  if ((loopCnt % 3000) == 0){  // every 30s        
-    sendCo2Value();    
-    sendGaugeBrightnessValue();
-    if (sensorsAvailable) {
-       if (readTemperature()){
-        sendTemperatureValue();
+  if (!initialized) {
+      if (currTime - lastInitTry > 10000){
+        lastInitTry = currTime;
+        blockingInitSession();    
+        
       }
-      if (readHumidity()){
-        sendHumidityValue();
-      }
-      if (readPressure()){
-        sendPressureValue();
-      }
-    }
   }
   
-  coap.loop();
+  
+  if (initialized){ 
+    // resubscribe if necessary
+    if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
+      lastResubscribe = currTime;
+      c->subscribeForActions(onAction);
+    }
+    // periodically send property updates
+    if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
+      lastPropertyUpdate = currTime;
+      sendGaugeBrightnessValue();
+      if (sensorsAvailable) {
+        Serial.println("Reading Sensor values");
+        if (readTemperature()){
+          sendTemperatureValue();
+        }
+        if (readHumidity()){
+          sendHumidityValue();
+        }
+        if (readPressure()){
+          sendPressureValue();
+        }
+      }      
+    }
+    
+  }
+  
   loopCnt++;
 
   
   if (loopCnt > 65535){ // when 16bit max have been reached - do not care about 32bit systems
     loopCnt = 0;
   }
+  c->loop();
   
   delay(10);
 
@@ -187,23 +219,36 @@ void loop() {
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-void loadDeviceConfig(){
-   Serial.println("Loading device settings"); 
-   EEPROM.get(0,deviceConfig);    
-   Serial.print("Device ID ");
-   Serial.println(deviceConfig.id);   
+bool loadDeviceConfig(){
+   Serial.println("loading device configuration"); 
+   Serial.println(DEVICE_ID_SIZE);
+   Serial.println(CHACHA_KEY_SIZE);
+   deviceConfigMemory.get(0,deviceConfig);      
+   Serial.print("Device ID = ");
+   Serial.println(deviceConfig.id);         
+   Serial.println(sizeof(deviceConfig.id));
+   Serial.println(sizeof(deviceConfig.key));
+   Serial.println(" -- key --");
+   for (int i = 0; i < CHACHA_KEY_SIZE; i++){
+      Serial.print( deviceConfig.key[i],HEX);
+      Serial.print(" ");
+   }
+   Serial.println();
+   Serial.println(" ---------");
 }
 
-
+/*
 void saveDeviceConfig(){
-  EEPROM.put(0, deviceConfig);
+  Serial.print("save device configuration ... ");
+  deviceConfigMemory.put(0, deviceConfig);
   if (EEPROM.commit()) {
-     Serial.println("Device configuration saved");
+     Serial.println("OK");
   } else {
      Serial.println("EEPROM error - Device Id and Device Code could not be saved");
      errorRing();
   }
 }
+*/
 
 void checkButton(){  
   
@@ -265,8 +310,6 @@ void onButtonReleased(){
 void resetConfiguration(){
    Serial.println("Resetting Configuration");
    wm.resetSettings();
-
-  // TODO - delete EEPROM
 }
 
 
@@ -290,6 +333,9 @@ bool readTemperature(){
   float newTemperature = float(int(bme.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
   bool res = (temperature != newTemperature);
   temperature = newTemperature;
+  Serial.print("temperature = ");
+  Serial.println(temperature);
+  
   return res;
 }
 
@@ -297,6 +343,8 @@ bool readHumidity(){
   float newHumidity = int(bme.readHumidity()); // ignore values after . 
   bool res (humidity != newHumidity);
   humidity = newHumidity;
+  Serial.print("humidity = ");
+  Serial.println(humidity);  
   return res;
 }
 
@@ -304,6 +352,9 @@ bool readPressure(){
   float newPressure = int(bme.readPressure())/100; 
   bool res = (pressure != newPressure);
   pressure = newPressure;
+  Serial.print("pressure = ");
+  Serial.println(pressure);
+  
   return res;
 }
 
@@ -316,166 +367,127 @@ bool isButtonPressed(){
 //                                    IoT Connctd
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-void buildPaths(){
-  String tmp = "api/v1/devices/"+String(deviceConfig.id)+"/"+String(deviceConfig.code)+"/action";
-  tmp.toCharArray(actionPath, tmp.length()+1);  
-  tmp = "api/v1/devices/"+String(deviceConfig.id)+"/"+String(deviceConfig.code)+"/status";
-  tmp.toCharArray(propertyPath, tmp.length()+1);
-}
 
-void registerForAction(){
-   if (actionPath == NULL){    
-     return;
-   }
-   Serial.println("observing for action");       
-   int msgId = coap.observe(ip, port, actionPath, 0);
-   Serial.print("Observe Message sent (ID = ");
-   Serial.print(msgId);    
-   Serial.println(")");
-}
-
-void onServerMessage(coapPacket &packet, IPAddress ip, int port) {
-  Serial.print("Incoming message or response (msgID = ");
-  Serial.print(packet.messageid);
-  Serial.print(" | packet.type = ");
-  Serial.print(packet.type);
-  Serial.print(" | packet.code = ");
-  Serial.print(packet.code);
-  Serial.print(" | payload = ");
-  Serial.print(packet.payloadlen);
-  Serial.println(")");
+// requestes a session id from connector which will be exchanged in every
+// message to prevent replay attacks. Can be called multiple times
+void blockingInitSession() {
+  initialized = false;
+  Serial.println("Initializing session");
   
-  if (packet.type == COAP_ACK) {
-    Serial.println("- ACK received");
-  } else if (packet.type == COAP_CON || packet.type == COAP_NONCON) {
-    Serial.println("- MSG received");
-    if (packet.type == COAP_CON) {
-        Serial.println("sending ACK");
-        coapPacket ack = buildAck(packet.messageid);
-        coap.sendPacket(ack, ip, port);
-    }
-    if (packet.payloadlen > 0) {
-      processPacket(packet, ip, port);
-    }
-  }
-}
-void processPacket(coapPacket &packet, IPAddress ip, int port) {
-    char p[packet.payloadlen + 1];
-    memcpy(p, packet.payload, packet.payloadlen);
-    p[packet.payloadlen] = NULL;    
-    Serial.print("processing payload (");
-    Serial.print(p);
-    Serial.println(")");
-    jsonDoc.clear();
-    DeserializationError error = deserializeJson(jsonDoc, p);  
-    if (error) {
-      Serial.print(F("deserializeJson() failed: "));
-      Serial.println(error.f_str());
-      return;
-    }
-
-    if (jsonDoc.containsKey("actionId")){
-      const char* actionName = jsonDoc["id"];
-      const char* valueStr = jsonDoc["value"];
-      int value = String(valueStr).toInt();
-      Serial.print("processing action ");
-      Serial.print(actionName);
-      Serial.print("(");
-      Serial.print(value);
-      Serial.println(")");
-
-      if (String(actionName).equals("setGauge")){
-        setGaugePercentage(value);     
+  int retries = 0;
+  c->init();
+  while (!initialized) {
+    if (retries > 10) {
+      Serial.println("\nSession can not be established. Resending init");
+      retries = 0;
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("No wifi connection. Abort session init");
+        return;
       }
-      if (String(actionName).equals("setBrightness")){
-        setGaugeBrightness(value);
-      }      
-      if (String(actionName).equals("startConfig")){
-         startWiFiConfiguration(value);
-      }  
-    }    
-   
-}
+      c->init();
+    }
 
-
-coapPacket buildAck(uint16_t messageid) {
-  coapPacket packet;
-  //make packet
-  packet.type = COAP_ACK;
-  packet.code = COAP_EMPTY;
-  packet.token = NULL;
-  packet.tokenlen = 0;
-  packet.payload = NULL;
-  packet.payloadlen = 0;
-  packet.optionnum = 0;
-  packet.messageid = messageid;
-  return packet;
-}
-
-uint16_t sendJson(){
-  String data;  
-  serializeJson(jsonDoc, data);  
-  return sendData(data);
-}
-
-uint16_t sendData(String data){
-  if (propertyPath == NULL){
-    return -1 ;
+    Serial.print(".");
+    retries += 1;
+    c->loop();
+    delay(200);
   }
-  char dataChar[data.length() + 1];
-  data.toCharArray(dataChar, data.length() + 1); 
-  int msgID = coap.post(ip, port, propertyPath, dataChar, data.length());
-  Serial.print("Property change sent ( ");
-  Serial.print(data);
-  Serial.print(" | msgID = ");
-  Serial.print(msgID);
-  Serial.println(")");
+
+  Serial.println("");
 }
 
-uint16_t sendHumidityValue(){
-  jsonDoc.clear();
-  jsonDoc["value"] = String(humidity);
-  jsonDoc["id"] = "humidity";
-  return sendJson();  
+
+void sendHumidityValue(){
+  c->sendFloatPropertyUpdate(property_humidity, humidity);
 }
 
-uint16_t sendTemperatureValue(){
-  jsonDoc.clear();
-  jsonDoc["value"] = String(temperature);
-  jsonDoc["id"] = "temperature";
-
-  return sendJson();
+void sendTemperatureValue(){
+   c->sendFloatPropertyUpdate(property_temperature, temperature);
 }
 
-uint16_t sendCo2Value(){
-  jsonDoc.clear();
-  jsonDoc["value"] = "865";
-  jsonDoc["id"] = "co2";
-
-  return sendJson();
+void sendPressureValue(){
+ c->sendFloatPropertyUpdate(property_pressure, pressure);
 }
 
-uint16_t sendPressureValue(){
-  jsonDoc.clear();
-  jsonDoc["value"] = String(pressure);
-  jsonDoc["id"] = "pressure";
-  return sendJson();
+void sendGaugeBrightnessValue(){
+   c->sendFloatPropertyUpdate(property_brightnes, brightness);
 }
 
-uint16_t sendGaugeBrightnessValue(){
-  jsonDoc.clear();
-  jsonDoc["value"] = String(brightness*100);
-  jsonDoc["id"] = "brightness";
-  return sendJson();
+void sendGaugeValue(){
+   //c->sendIntPropertyUpdate("gauge", gaugeValue);
 }
 
-uint16_t sendGaugeValue(){
-  jsonDoc.clear();
-  jsonDoc["value"] = String(gaugeValue);
-  jsonDoc["id"] = "gauge";
-  return sendJson();
+// called whenever an action is invoked
+void onAction(unsigned char actionId, char *value) {
+  Serial.printf("Action called. Id: %x Value: %s\n", actionId, value);
 }
 
+// called whenever marconi lib sends debug data
+void onDebug(const char *msg) {
+    //Serial.printf("[DEBUG] %s\n", msg);
+} 
+
+// called whenever connection state changes
+void onConnectionStateChange(const unsigned char state) {
+    Serial.printf("[CON] ");
+    switch (state) {
+      case kConnectionStateInitialized:
+        Serial.println("Session was initialized");
+        initialized = true;
+        break;
+      case kConnectionStateUninitialized:
+        Serial.println("Session initialization ongoing");
+        initialized = false;
+        break;
+      case kConnectionStateInitRejected:
+        Serial.println("Session initialization has failed");
+        initialized = false;
+        break;
+      case kConnectionObservationRequested:
+        Serial.println("Observation was requested");
+        break;
+      case kConnectionObservationOngoing:
+        Serial.println("Observation is now ongoing");
+        break;
+      case kConnectionObservationRejected:
+        Serial.println("Observation was rejected");
+
+        // reinit session in case connector was restarted
+        initialized = false;
+
+        // after reinit we want to resubscribe
+        lastResubscribe = 0;
+        break;
+      default:
+        Serial.printf("Unknown connection event %x\n", state);
+        break;
+    }
+}
+
+// called whenever an error occurs in marconi lib
+void onErr(const unsigned char error) {
+    Serial.printf("[ERROR] ");
+    switch (error) {
+        case kErrorInvalidPlaintextSize:
+            Serial.println("Plaintext size too small");
+            break;
+        case kErrorInvalidCipherstreamSize:
+            Serial.println("Encryption failed. Cipherstream too small");
+            break;
+        case kErrorActionRequestRejected:
+            Serial.println("Received action request was rejected");
+            break;
+        case kErrorDecryptionFailed:
+            Serial.println("Decryption error");
+            break;
+        case kErrorEncryptionFailed:
+            Serial.println("Encryption error");
+            break;
+        default:
+            Serial.printf("Unknown error event %x\n", error);
+            break;
+    }
+}
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    WiFi Manager
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -483,7 +495,7 @@ uint16_t sendGaugeValue(){
 
 void initializeWiFi(){ 
   int customFieldLength = 40;  
-  const char* custom_radio_str = "<br/><br/>Please enter Device ID <br/> <input type='text' name='deviceId' id='deviceId'/><br/>Please enter Device Code <br/> <input type='text' name='deviceCode' id='deviceCode'/>";  
+  const char* custom_radio_str = "<br/><br/>Please enter your postal code <br/> <input type='text' name='postcode' id='postcode'/>";  
   new (&custom_field) WiFiManagerParameter(custom_radio_str); // custom html input  
   wm.addParameter(&custom_field);
   wm.setSaveParamsCallback(saveParamCallback);
@@ -535,7 +547,7 @@ String getParam(String name){
 void saveParamCallback(){
   Serial.println("[CALLBACK] saveParamCallback fired");
  
-  String deviceId = getParam("deviceId");
+/*  String deviceId = getParam("deviceId");
   deviceId.toCharArray(deviceConfig.id,9);
   deviceConfig.id[8] = '\0';
   String deviceCode = getParam("deviceCode");
@@ -543,8 +555,8 @@ void saveParamCallback(){
   deviceConfig.code[4] = '\0';
 
   Serial.println("deviceId   = " + String(deviceConfig.id));
-  Serial.println("deviceCode = " + String(deviceConfig.code));
-  saveDeviceConfig();
+  Serial.println("deviceCode = " + String(deviceConfig.code));*/
+  //saveDeviceConfig();
 }
 
 void configModeCallback (WiFiManager *myWiFiManager) {
@@ -560,7 +572,7 @@ void setGaugePercentage(int value){
   Serial.print("setting new value: ");
   Serial.println(value);
   gaugeValue = value;
-  sendGaugeValue();
+  //sendGaugeValue();
   
   if (value == 0){
     clearRing();
