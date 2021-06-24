@@ -5,9 +5,9 @@
  *                          _   ___ ___    ___  _   _  _   _    ___ _______   __  ___ ___ ___ 
  *                         /_\ |_ _| _ \  / _ \| | | |/_\ | |  |_ _|_   _\ \ / / | __/ __| _ \
  *                        / _ \ | ||   / | (_) | |_| / _ \| |__ | |  | |  \ V /  | _|\__ \  _/
- *                       /_/ \_\___|_|_\  \__\_\\___/_/ \_\____|___| |_|   |_|   |___|___/_|  
+ *                       /_/ \_\___|_|_\  \__\_\\___/_/ \_\____|___| |_|   |_|   |___|___/_|                   IoT connctd 
  *  ----------------------------------------------------------------------------------------------------------------------                          
- *  
+ *                                                                                                            
  * 
  *           FileStructure ┐
  *                         ├ Variable Declaration ┐
@@ -29,9 +29,9 @@
 
 
 #include <EEPROM.h>
-//#include <WiFi.h>
+#include <Wire.h>
 #include "marconi_client.h"
-#include <Adafruit_NeoPixel.h>
+#include <FastLED.h>
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
 //#include <ESP8266TrueRandom.h>
 
@@ -50,9 +50,11 @@ const char* AP_SSID = "Air-Quality";
 #define LED_PIN   25
 #define NUMPIXELS 13
 #define ALLPIXELS 28
+#define LED_TYPE    WS2811
+#define COLOR_ORDER GRB
 
 
-Adafruit_NeoPixel pixels = Adafruit_NeoPixel(ALLPIXELS,LED_PIN, NEO_GRB + NEO_KHZ800);
+CRGB leds[ALLPIXELS];
 
 int animationSpeed = 50;  
 int oldScaleValue = 1;     // needed for value change animation of gauge
@@ -111,8 +113,7 @@ bool sensorsAvailable = false;
 //                                   SETUP
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-void setup() {
-  
+void setup() {  
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
@@ -138,7 +139,8 @@ void setup() {
   initMarconi();
   clearRing();
   
-  sensorsAvailable = initBME280();    
+  sensorsAvailable = initBME280(); 
+  setGaugePercentage(100);
 }
 
 void initializeRandomSeed(){
@@ -147,8 +149,10 @@ void initializeRandomSeed(){
 }
 
 void initializeLedRing(){
-  pixels.begin(); 
+   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, ALLPIXELS).setCorrection( TypicalLEDStrip );
+   FastLED.setBrightness(255);  
   clearRing();  
+  
 }
 
 void initMarconi(){
@@ -171,9 +175,7 @@ void loop() {
         blockingInitSession();    
         
       }
-  }
-  
-  
+  }  
   if (initialized){ 
     // resubscribe if necessary
     if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
@@ -236,19 +238,6 @@ bool loadDeviceConfig(){
    Serial.println();
    Serial.println(" ---------");
 }
-
-/*
-void saveDeviceConfig(){
-  Serial.print("save device configuration ... ");
-  deviceConfigMemory.put(0, deviceConfig);
-  if (EEPROM.commit()) {
-     Serial.println("OK");
-  } else {
-     Serial.println("EEPROM error - Device Id and Device Code could not be saved");
-     errorRing();
-  }
-}
-*/
 
 void checkButton(){  
   
@@ -323,7 +312,8 @@ bool initBME280(){
   if (res){
     Serial.println("OK");
   } else {
-    Serial.println("ERROR - No BME280 found on I2C wiring");
+    Serial.print("ERROR - No BME280 found on I2C wiring with address ");
+    Serial.println(BME280_ADDRESS_ALTERNATE);
     
   }
   return res;
@@ -424,7 +414,7 @@ void onAction(unsigned char actionId, char *value) {
 
 // called whenever marconi lib sends debug data
 void onDebug(const char *msg) {
-    //Serial.printf("[DEBUG] %s\n", msg);
+    Serial.printf("[DEBUG] %s\n", msg);
 } 
 
 // called whenever connection state changes
@@ -546,17 +536,7 @@ String getParam(String name){
 
 void saveParamCallback(){
   Serial.println("[CALLBACK] saveParamCallback fired");
- 
-/*  String deviceId = getParam("deviceId");
-  deviceId.toCharArray(deviceConfig.id,9);
-  deviceConfig.id[8] = '\0';
-  String deviceCode = getParam("deviceCode");
-  deviceCode.toCharArray(deviceConfig.code,5);
-  deviceConfig.code[4] = '\0';
-
-  Serial.println("deviceId   = " + String(deviceConfig.id));
-  Serial.println("deviceCode = " + String(deviceConfig.code));*/
-  //saveDeviceConfig();
+  // nothing to save
 }
 
 void configModeCallback (WiFiManager *myWiFiManager) {
@@ -590,6 +570,7 @@ void setGaugeBrightness(int value){
   Serial.print(value);
   Serial.println("%");  
   brightness = float(value)/100.F;
+  FastLED.setBrightness(brightness * 255);
   refreshGauge();
   sendGaugeBrightnessValue();
   
@@ -603,6 +584,9 @@ void triggerGaugeBrightness(){
     if (brightness <= 0.0F){
       brightness = 1.0F;
     }
+    Serial.print("Setting gaouge brightnes to ");
+    Serial.println(brightness);
+    FastLED.setBrightness(brightness *255);
     refreshGauge();
     sendGaugeBrightnessValue();
 }
@@ -630,46 +614,46 @@ int getScaleValue(int value){
 void animateGauge(int startPixel, int stopPixel){
   if (startPixel <= stopPixel) {  
     for (int i=0; i < stopPixel; i++){
-      pixels.setPixelColor(i, pixels.Color(((255/NUMPIXELS)*i)*brightness,(150-(150/NUMPIXELS)*i)*brightness,0)); 
-      pixels.show(); 
+      leds[i] = CRGB( (255/NUMPIXELS)*i,(150-(150/NUMPIXELS)*i),0); 
+      FastLED.show();
       delay(animationSpeed); 
     }  
   } else {    
     for (int i=startPixel; i >= stopPixel; i--){   
-      pixels.setPixelColor(i, pixels.Color(0,0,0)); 
-      pixels.show(); 
+      leds[i] = CRGB::Black;    
+      FastLED.show(); 
       delay(animationSpeed); 
     }    
   }  
 }
 
 void clearRing(){
-  for (int i=0; i <= ALLPIXELS; i++){
-     pixels.setPixelColor(i, pixels.Color(0,0,0)); 
+   for (int i=0; i <= ALLPIXELS; i++){
+      leds[i] = CRGB::Black;    
   }
-  pixels.show();
+  FastLED.show();  
 }
 
 
 void blueRing(){
   for (int i=0; i <= ALLPIXELS; i++){
-     pixels.setPixelColor(i, pixels.Color(0,0,255)); 
+      leds[i] = CRGB::Blue;    
   }
-  pixels.show();
+  FastLED.show();  
 }
 
 void redRing(){
   for (int i=0; i <= ALLPIXELS; i++){
-     pixels.setPixelColor(i, pixels.Color(255,0,0)); 
+      leds[i] = CRGB::Red;    
   }
-  pixels.show();
+  FastLED.show();  
 }
 
 void greenRing(){
   for (int i=0; i <= ALLPIXELS; i++){
-     pixels.setPixelColor(i, pixels.Color(0,255,0)); 
+      leds[i] = CRGB::Green;    
   }
-  pixels.show();
+  FastLED.show();  
 }
 
 void errorRing(){

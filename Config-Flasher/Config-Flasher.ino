@@ -1,14 +1,17 @@
 #include <EEPROM.h>
 
-// ++++++++++++++++++++++ Gauge ++++++++++++++++++++
+// ++++++++++++++++++++++ LED ++++++++++++++++++++
 #define LED_PIN   D4
 #define NUMPIXELS 13
 #define ALLPIXELS 28
 
 //Adafruit_NeoPixel pixels = Adafruit_NeoPixel(ALLPIXELS,LED_PIN, NEO_GRB + NEO_KHZ800);
 
+// +++++++++++++ Device Configuration +++++++++++++
+
 #define DEVICE_ID_SIZE 17
 #define CHACHA_KEY_SIZE 32
+#define DEVICE_CONFIG_MEMORY_SIZE 0x500
 
 struct DeviceConfig {    
     char id[DEVICE_ID_SIZE];    
@@ -17,12 +20,16 @@ struct DeviceConfig {
 
 DeviceConfig deviceConfig;
 
-EEPROMClass  devConfigMemory("devConfig", 0x500);
+EEPROMClass  devConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 
+
+// ===============================================
+//                  SETUP
+// ===============================================
 void setup() {
   Serial.begin(115200);
 
-  Serial.print("Geht los in 3");
+  Serial.print("Starting in 3");
   delay(2000);
   Serial.print(" 2");
   delay(2000);
@@ -42,36 +49,73 @@ void setup() {
   Serial.println("DeviceConfig generated");
   Serial.print("DeviceID = ");
   Serial.println(deviceConfig.id);
+  printKey(deviceConfig);
   saveDeviceConfig();
 
   checkDeviceConfig();
   
-  Serial.println("And Done... Bye!");
+  Serial.println("And done... Bye!");
 }
 
-void checkDeviceConfig(){
+bool checkDeviceConfig(){
    DeviceConfig devconf;
-   Serial.println("Loading device settings"); 
    devConfigMemory.get(0,devconf);    
-   Serial.print("Device ID = ");
-   Serial.println(devconf.id);   
-   Serial.print("Device Key = ");
+   bool res = true;
+   Serial.print("Checking device Id ... ");
+   for (int i = 0; i < DEVICE_ID_SIZE; i++){
+    res = res && devconf.id[i] == deviceConfig.id[i]; 
+   }
+   if (res) {
+      Serial.println("OK");
+   } else {
+      Serial.println("ERROR");
+      Serial.println("Device ID was not stored or loaded correctly");
+      Serial.print("Device ID to save = ");
+      Serial.println(deviceConfig.id);
+      Serial.print("Device ID loaded  = ");
+      Serial.println(devconf.id);
+      return res;
+   }
+   Serial.print("Checking Device Key ... ");   
    for (int i = 0; i < CHACHA_KEY_SIZE; i++){
-      Serial.print(devconf.key[i],HEX);
-      Serial.print(" ");
+      res = res && devconf.key[i] == deviceConfig.key[i];   
+   }
+   
+   if (res) {
+      Serial.println("OK");      
+   } else {
+      Serial.println("ERROR");
+      Serial.println("resotred key is not equal device key. Somethings went wrong.");
+      Serial.println("----- Key to store -----");
+      printKey(deviceConfig);
+      Serial.println("------------------------");
+      Serial.println("----- Key restored -----");
+      printKey(devconf);
+      Serial.println("------------------------");
    }
    Serial.println();
+   return res;
 }
 
-void saveDeviceConfig(){
+bool saveDeviceConfig(){
   Serial.print("Save device configuration ... ");
   devConfigMemory.put(0, deviceConfig);
   if (devConfigMemory.commit()) {
      Serial.println("OK");
   } else {
-     Serial.println("EEPROM error - Device Id and Device Code could not be saved");
-    // errorRing();
+     Serial.println("EEPROM error - Device Id and Device Code could not be saved");    
+     return false;
   }
+  return true;
+}
+
+void printKey(DeviceConfig dc){
+   Serial.print("Device Key = ");
+   for (int i = 0; i < CHACHA_KEY_SIZE; i++){     
+      Serial.print(dc.key[i],HEX);
+      Serial.print(" ");
+   }
+   Serial.println();
 }
 
 void loop() {
