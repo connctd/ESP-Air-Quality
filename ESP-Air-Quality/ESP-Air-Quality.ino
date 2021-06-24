@@ -139,8 +139,7 @@ void setup() {
   initMarconi();
   clearRing();
   
-  sensorsAvailable = initBME280(); 
-  setGaugePercentage(100);
+  sensorsAvailable = initBME280();   
 }
 
 void initializeRandomSeed(){
