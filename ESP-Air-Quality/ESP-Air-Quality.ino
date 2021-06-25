@@ -117,18 +117,25 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
-  pinMode(TRIGGER_PIN, INPUT);
 
-  if (!deviceConfigMemory.begin(0x500)){
+  initializeLedRing();    
+  initializeRandomSeed();
+  
+  pinMode(TRIGGER_PIN, INPUT);
+  
+  if (!initEEProm()){
     Serial.println("ERROR - Failed to initialize EEPROM");
     Serial.println("ESP will be restarted");
+    errorRing();
     ESP.restart();
   }
 
-  loadDeviceConfig();  
- 
-  initializeRandomSeed();
-  initializeLedRing();   
+  if (!loadDeviceConfig()){
+    while(true){
+      errorRing();
+    }
+  }
+     
   initializeWiFi(); 
   
   // ToDo - make non blocking and animate "connecting gauge"
@@ -137,9 +144,10 @@ void setup() {
   }
 
   initMarconi();
+  sensorsAvailable = initBME280();   
   clearRing();
   
-  sensorsAvailable = initBME280();   
+
 }
 
 void initializeRandomSeed(){
@@ -155,11 +163,13 @@ void initializeLedRing(){
 }
 
 void initMarconi(){
-  Serial.println("initialize Marconi Library");
-  delay(2000);
+  Serial.println("initialize Marconi Library");  
   c = new MarconiClient(ip, port, deviceConfig.id, deviceConfig.key, onConnectionStateChange, onDebug, onErr);
 }
 
+bool initEEProm(){
+  return deviceConfigMemory.begin(0x500);
+}
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    THE LOOP 
@@ -222,13 +232,10 @@ void loop() {
 
 bool loadDeviceConfig(){
    Serial.println("loading device configuration"); 
-   Serial.println(DEVICE_ID_SIZE);
-   Serial.println(CHACHA_KEY_SIZE);
+
    deviceConfigMemory.get(0,deviceConfig);      
    Serial.print("Device ID = ");
    Serial.println(deviceConfig.id);         
-   Serial.println(sizeof(deviceConfig.id));
-   Serial.println(sizeof(deviceConfig.key));
    Serial.println(" -- key --");
    for (int i = 0; i < CHACHA_KEY_SIZE; i++){
       Serial.print( deviceConfig.key[i],HEX);
@@ -236,6 +243,10 @@ bool loadDeviceConfig(){
    }
    Serial.println();
    Serial.println(" ---------");
+
+  // TODO: check whether a proper device configuration was loaded 
+   
+   return true;
 }
 
 void checkButton(){  
@@ -482,12 +493,8 @@ void onErr(const unsigned char error) {
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-void initializeWiFi(){ 
-  int customFieldLength = 40;  
-  const char* custom_radio_str = "<br/><br/>Please enter your postal code <br/> <input type='text' name='postcode' id='postcode'/>";  
-  new (&custom_field) WiFiManagerParameter(custom_radio_str); // custom html input  
-  wm.addParameter(&custom_field);
-  wm.setSaveParamsCallback(saveParamCallback);
+void initializeWiFi(){   
+  //wm.setSaveParamsCallback(saveParamCallback);
   std::vector<const char *> menu = {"wifi","info","sep","restart","exit"};
   wm.setMenu(menu);  
   wm.setClass("invert");
@@ -497,10 +504,7 @@ void initializeWiFi(){
  
 bool connectToWiFi(){
   bool res;
-
-  // connect to alread configured WiFi or start AP  
   res = wm.autoConnect(AP_SSID,NULL); 
-
   if(!res) {
     Serial.println("Failed to connect or hit timeout");
     errorRing();  
