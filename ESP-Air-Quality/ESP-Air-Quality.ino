@@ -131,6 +131,7 @@ void setup() {
   }
 
   if (!loadDeviceConfig()){
+    Serial.println("ERROR - Device was not flashed with Device ID and KEY!!!");
     while(true){
       errorRing();
     }
@@ -235,7 +236,14 @@ bool loadDeviceConfig(){
 
    deviceConfigMemory.get(0,deviceConfig);      
    Serial.print("Device ID = ");
-   Serial.println(deviceConfig.id);         
+   Serial.println(deviceConfig.id);    
+    Serial.println(" -- id --");
+   for (int i = 0; i < DEVICE_ID_SIZE; i++){
+      Serial.print( deviceConfig.id[i],HEX);
+      Serial.print(" ");
+   }
+   Serial.println();
+   Serial.println(" ---------");     
    Serial.println(" -- key --");
    for (int i = 0; i < CHACHA_KEY_SIZE; i++){
       Serial.print( deviceConfig.key[i],HEX);
@@ -244,9 +252,7 @@ bool loadDeviceConfig(){
    Serial.println();
    Serial.println(" ---------");
 
-  // TODO: check whether a proper device configuration was loaded 
-   
-   return true;
+  return ((deviceConfig.id[0] != 0xFF) && (deviceConfig.id[0] != 0)) ; 
 }
 
 void checkButton(){  
