@@ -147,7 +147,6 @@ void setup() {
   initMarconi();
   sensorsAvailable = initBME280();   
   clearRing();
-  
 
 }
 
