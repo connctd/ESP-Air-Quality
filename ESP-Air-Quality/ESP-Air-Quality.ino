@@ -425,6 +425,9 @@ void sendGaugeValue(){
 // called whenever an action is invoked
 void onAction(unsigned char actionId, char *value) {
   Serial.printf("Action called. Id: %x Value: %s\n", actionId, value);
+  if (actionId == 1){
+    setGaugePercentage(String(value).toInt());
+  }
 }
 
 // called whenever marconi lib sends debug data
