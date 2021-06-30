@@ -59,7 +59,7 @@ CRGB leds[ALLPIXELS];
 int animationSpeed = 50;  
 int oldScaleValue = 1;     // needed for value change animation of gauge
 int gaugeValue = 0;
-float brightness = 1.0F;   // value between 0 (off) and 1 (full brightness)
+float dimmLevel = 1.0F;   // value between 0 (off) and 1 (full brightness)
 
 // +++++++++++++++++++++++ Connctd +++++++++++++++++++++
 
@@ -84,12 +84,14 @@ unsigned long lastResubscribe = 0; // periodically resubscribe
 unsigned long lastInitTry = 0;
 unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 
-byte property_gauge = 0x01;
-byte property_co2 = 0x02;
-byte property_temperature = 0x03;
-byte property_humidity = 0x04;
-byte property_brightnes = 0x05;
-byte property_pressure = 0x06;
+#define property_gauge       0x01
+#define property_co2         0x02
+#define property_temperature 0x03
+#define property_humidity    0x04
+#define property_dimmlevel   0x05
+#define property_pressure    0x06
+#define actionID_gaugeValue  0x01
+#define actionID_dimmLevel   0x05
 
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 unsigned int loopCnt = 0;
@@ -194,7 +196,7 @@ void loop() {
     // periodically send property updates
     if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
       lastPropertyUpdate = currTime;
-      sendGaugeBrightnessValue();
+      sendGaugeDimmLevelValue();
       if (sensorsAvailable) {
         Serial.println("Reading Sensor values");
         if (readTemperature()){
@@ -301,7 +303,7 @@ void onButtonReleased(){
    Serial.println("ms)");  
 
    if (pressedMillis <= 1500) {   
-      triggerGaugeBrightness();
+      triggerGaugeDimmLevel();
       return;
    }
    if ((pressedMillis >= 5000) && (pressedMillis < 10000)){
@@ -414,19 +416,27 @@ void sendPressureValue(){
  c->sendFloatPropertyUpdate(property_pressure, pressure);
 }
 
-void sendGaugeBrightnessValue(){
-   c->sendFloatPropertyUpdate(property_brightnes, brightness);
+void sendGaugeDimmLevelValue(){
+   c->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
 }
 
 void sendGaugeValue(){
-   //c->sendIntPropertyUpdate("gauge", gaugeValue);
+   c->sendFloatPropertyUpdate(property_gauge, gaugeValue);
 }
 
 // called whenever an action is invoked
 void onAction(unsigned char actionId, char *value) {
   Serial.printf("Action called. Id: %x Value: %s\n", actionId, value);
-  if (actionId == 1){
-    setGaugePercentage(String(value).toInt());
+  switch (actionId){
+    case actionID_gaugeValue:
+      setGaugePercentage(String(value).toInt());
+      break;
+    case actionID_dimmLevel:
+      setGaugeDimmLevel(String(value).toFloat()*100);
+      break;
+     default :
+        Serial.println("no matching Action found");
+     break;
   }
 }
 
@@ -563,7 +573,7 @@ void setGaugePercentage(int value){
   Serial.print("setting new value: ");
   Serial.println(value);
   gaugeValue = value;
-  //sendGaugeValue();
+  sendGaugeValue();
   
   if (value == 0){
     clearRing();
@@ -576,30 +586,30 @@ void setGaugePercentage(int value){
   
 }
 
-void setGaugeBrightness(int value){  
-  Serial.print("Setting brightness to ");
+void setGaugeDimmLevel(int value){  
+  Serial.print("Setting dimmlevel to ");
   Serial.print(value);
   Serial.println("%");  
-  brightness = float(value)/100.F;
-  FastLED.setBrightness(brightness * 255);
+  dimmLevel = float(value)/100.F;
+  FastLED.setBrightness(dimmLevel * 255);
   refreshGauge();
-  sendGaugeBrightnessValue();
+  sendGaugeDimmLevelValue();
   
 }
 
-void triggerGaugeBrightness(){  
-    brightness -= 0.20F;
-    if (brightness > 0.0F && brightness <= 0.15F){
-      brightness = 0.05F;
+void triggerGaugeDimmLevel(){  
+    dimmLevel -= 0.20F;
+    if (dimmLevel > 0.0F && dimmLevel <= 0.15F){
+      dimmLevel = 0.05F;
     }
-    if (brightness <= 0.0F){
-      brightness = 1.0F;
+    if (dimmLevel <= 0.0F){
+      dimmLevel = 1.0F;
     }
-    Serial.print("Setting gaouge brightnes to ");
-    Serial.println(brightness);
-    FastLED.setBrightness(brightness *255);
+    Serial.print("Setting gaouge dimm level to ");
+    Serial.println(dimmLevel);
+    FastLED.setBrightness(dimmLevel *255);
     refreshGauge();
-    sendGaugeBrightnessValue();
+    sendGaugeDimmLevelValue();
 }
 
 void refreshGauge(){
