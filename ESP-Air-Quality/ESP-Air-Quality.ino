@@ -37,6 +37,7 @@
 
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
+#include "Adafruit_BME680.h"
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -101,7 +102,8 @@ unsigned int loopCnt = 0;
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 
-Adafruit_BME280 bme; 
+Adafruit_BME280 bme280; 
+Adafruit_BME680 bme680; 
 
 bool buttonPressed = false;
 unsigned long buttonPressMillis = 0;
@@ -109,8 +111,10 @@ unsigned long buttonPressMillis = 0;
 float temperature = 0.0;
 float humidity = 0.0;
 float pressure = 0.0;
+float voc_reference_index = 0.0;
 
-bool sensorsAvailable = false;
+bool bme280_available = false;
+bool bme680_available = false;
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -147,7 +151,10 @@ void setup() {
   }
 
   initMarconi();
-  sensorsAvailable = initBME280();   
+  
+  bme680_available = initBME680();
+  bme280_available = initBME280();   
+  
   clearRing();
 
 }
@@ -197,8 +204,17 @@ void loop() {
     if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
       lastPropertyUpdate = currTime;
       sendGaugeDimmLevelValue();
-      if (sensorsAvailable) {
-        Serial.println("Reading Sensor values");
+      if (sensorsAvailable()) {
+        if (bme680_available){
+           Serial.println("Reading Sensor values");
+           if (! bme680.performReading()) {
+              Serial.println("Failed to perform reading values from BME 680:(");            
+            }
+            if (readVocReference()){
+               sendCo2Value();
+            }
+        }
+        
         if (readTemperature()){
           sendTemperatureValue();
         }
@@ -208,6 +224,7 @@ void loop() {
         if (readPressure()){
           sendPressureValue();
         }
+       
       }      
     }
     
@@ -323,9 +340,30 @@ void resetConfiguration(){
 //                                    Sensoring
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+bool sensorsAvailable(){
+  return bme280_available || bme680_available;
+}
+
+bool initBME680(){
+  Serial.print("Initializing BME680 ... ");
+  bool res = bme680.begin();
+  if (res){
+    Serial.println("OK");
+    Serial.println("BME 680 sensors will be adjusted");
+    bme680.setTemperatureOversampling(BME680_OS_8X);
+    bme680.setHumidityOversampling(BME680_OS_2X);
+    bme680.setPressureOversampling(BME680_OS_4X);
+    bme680.setIIRFilterSize(BME680_FILTER_SIZE_3);
+    bme680.setGasHeater(320, 150); // 320*C for 150 ms
+  } else {
+    Serial.println("ERROR - No BME680 found on I2C wiring with default address ");    
+  }
+  return res;
+}
+
 bool initBME280(){
   Serial.print("Initializing BME280 ... ");
-  bool res = bme.begin(BME280_ADDRESS_ALTERNATE, &Wire);
+  bool res = bme280.begin(BME280_ADDRESS_ALTERNATE, &Wire);
   if (res){
     Serial.println("OK");
   } else {
@@ -337,7 +375,17 @@ bool initBME280(){
 }
 
 bool readTemperature(){  
-  float newTemperature = float(int(bme.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
+  if (!sensorsAvailable()) {
+    return false;
+  }
+  float newTemperature;
+  
+  if (bme680_available) {
+    newTemperature = float(int(bme680.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
+  } else if (bme280_available){
+    newTemperature = float(int(bme280.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
+  }
+  
   bool res = (temperature != newTemperature);
   temperature = newTemperature;
   Serial.print("temperature = ");
@@ -347,7 +395,16 @@ bool readTemperature(){
 }
 
 bool readHumidity(){
-  float newHumidity = int(bme.readHumidity()); // ignore values after . 
+  if (!sensorsAvailable()) {
+    return false;
+  }
+  float newHumidity = 0.0;
+  
+  if (bme680_available){
+    newHumidity = int(bme680.humidity);
+  } else if (bme280_available){
+    newHumidity = int(bme280.readHumidity()); // ignore values after . 
+  }
   bool res (humidity != newHumidity);
   humidity = newHumidity;
   Serial.print("humidity = ");
@@ -356,7 +413,16 @@ bool readHumidity(){
 }
 
 bool readPressure(){
-  float newPressure = int(bme.readPressure())/100; 
+  if (!sensorsAvailable()) {
+    return false;
+  }
+  float newPressure =0.0;
+  if (bme680_available){
+    newPressure = int(bme680.pressure)/100;
+  } else if (bme280_available){
+    newPressure = int(bme280.readPressure())/100; 
+  }
+  
   bool res = (pressure != newPressure);
   pressure = newPressure;
   Serial.print("pressure = ");
@@ -364,6 +430,11 @@ bool readPressure(){
   
   return res;
 }
+
+bool readVocReference(){
+  return false;
+}
+
 
 bool isButtonPressed(){
   return  digitalRead(TRIGGER_PIN) == LOW ;
@@ -415,6 +486,11 @@ void sendTemperatureValue(){
 void sendPressureValue(){
  c->sendFloatPropertyUpdate(property_pressure, pressure);
 }
+
+void sendCo2Value(){
+ // 
+}
+
 
 void sendGaugeDimmLevelValue(){
    c->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
