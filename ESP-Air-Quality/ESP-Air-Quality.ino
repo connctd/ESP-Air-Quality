@@ -37,7 +37,8 @@
 
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
-#include "Adafruit_BME680.h"
+#include "bsec.h"
+
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -91,6 +92,8 @@ unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 #define property_humidity    0x04
 #define property_dimmlevel   0x05
 #define property_pressure    0x06
+
+
 #define actionID_gaugeValue  0x01
 #define actionID_dimmLevel   0x05
 
@@ -103,7 +106,7 @@ unsigned int loopCnt = 0;
 #define SEALEVELPRESSURE_HPA (1013.25)
 
 Adafruit_BME280 bme280; 
-Adafruit_BME680 bme680; 
+Bsec iaqSensor;
 
 bool buttonPressed = false;
 unsigned long buttonPressMillis = 0;
@@ -111,7 +114,9 @@ unsigned long buttonPressMillis = 0;
 float temperature = 0.0;
 float humidity = 0.0;
 float pressure = 0.0;
-float voc_reference_index = 0.0;
+float voc = 0.0;
+int co2 = 0;
+
 
 bool bme280_available = false;
 bool bme680_available = false;
@@ -123,7 +128,7 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
-
+  Wire.begin();
   initializeLedRing();    
   initializeRandomSeed();
   
@@ -199,22 +204,12 @@ void loop() {
     if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
       lastResubscribe = currTime;
       c->subscribeForActions(onAction);
-    }
+    }    
     // periodically send property updates
     if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
       lastPropertyUpdate = currTime;
       sendGaugeDimmLevelValue();
-      if (sensorsAvailable()) {
-        if (bme680_available){
-           Serial.println("Reading Sensor values");
-           if (! bme680.performReading()) {
-              Serial.println("Failed to perform reading values from BME 680:(");            
-            }
-            if (readVocReference()){
-               sendCo2Value();
-            }
-        }
-        
+      if (sensorsAvailable()) {              
         if (readTemperature()){
           sendTemperatureValue();
         }
@@ -224,6 +219,9 @@ void loop() {
         if (readPressure()){
           sendPressureValue();
         }
+        if (readCo2Equivalent()){
+          sendCo2Value();
+        }
        
       }      
     }
@@ -231,15 +229,22 @@ void loop() {
   }
   
   loopCnt++;
-
   
   if (loopCnt > 65535){ // when 16bit max have been reached - do not care about 32bit systems
     loopCnt = 0;
   }
   c->loop();
-  
-  delay(10);
 
+  if (loopCnt % 500 == 0){
+    if (bme680_available){         
+       if (!iaqSensor.run()){
+          Serial.println("Error reading SEC values");
+          evalIaqSensorStatus();
+       }           
+    }   
+  }
+        
+  delay(10);
 }
 
 
@@ -345,20 +350,69 @@ bool sensorsAvailable(){
 }
 
 bool initBME680(){
-  Serial.print("Initializing BME680 ... ");
-  bool res = bme680.begin();
-  if (res){
-    Serial.println("OK");
-    Serial.println("BME 680 sensors will be adjusted");
-    bme680.setTemperatureOversampling(BME680_OS_8X);
-    bme680.setHumidityOversampling(BME680_OS_2X);
-    bme680.setPressureOversampling(BME680_OS_4X);
-    bme680.setIIRFilterSize(BME680_FILTER_SIZE_3);
-    bme680.setGasHeater(320, 150); // 320*C for 150 ms
-  } else {
-    Serial.println("ERROR - No BME680 found on I2C wiring with default address ");    
+  Serial.print("Initializing BME680 ... ");  
+  iaqSensor.begin(BME680_I2C_ADDR_SECONDARY,Wire);  
+  
+  if (!checkIaqSensorStatus()){
+    Serial.println("ERROR");
+    evalIaqSensorStatus();
+    return false;
   }
-  return res;
+  
+  bsec_virtual_sensor_t sensorList[10] = {
+    BSEC_OUTPUT_RAW_TEMPERATURE,
+    BSEC_OUTPUT_RAW_PRESSURE,
+    BSEC_OUTPUT_RAW_HUMIDITY,
+    BSEC_OUTPUT_RAW_GAS,
+    BSEC_OUTPUT_IAQ,
+    BSEC_OUTPUT_STATIC_IAQ,
+    BSEC_OUTPUT_CO2_EQUIVALENT,
+    BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
+    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
+    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
+  };
+
+  
+  iaqSensor.updateSubscription(sensorList, 10, BSEC_SAMPLE_RATE_LP);
+  
+  if (!checkIaqSensorStatus()){
+    Serial.println("ERROR");
+    evalIaqSensorStatus();
+    return false;
+  }
+  Serial.println("OK");
+  String output = "BSEC library version " + String(iaqSensor.version.major) + "." + String(iaqSensor.version.minor) + "." + String(iaqSensor.version.major_bugfix) + "." + String(iaqSensor.version.minor_bugfix);
+  Serial.println(output);  
+}
+
+bool checkIaqSensorStatus(void) {
+  return (iaqSensor.status == BSEC_OK);
+}
+
+void evalIaqSensorStatus(){ {
+    String output;
+    if (iaqSensor.status == BSEC_OK) {
+      output = "BSEC OK : " + String(iaqSensor.status);            
+    } else { 
+      if (iaqSensor.status < BSEC_OK) {
+        output = "BSEC error code : " + String(iaqSensor.status);            
+      } else {
+        output = "BSEC warning code : " + String(iaqSensor.status);      
+      }
+    }
+    Serial.println(output); 
+
+    if (iaqSensor.bme680Status != BME680_OK) {
+      output = "BME680 error code : " + String(iaqSensor.bme680Status);
+    } else {
+      if (iaqSensor.bme680Status < BME680_OK) {
+        output = "BME680 error code : " + String(iaqSensor.bme680Status);          
+      } else {
+        output = "BME680 warning code : " + String(iaqSensor.bme680Status);      
+      }
+    }
+    Serial.println(output);      
+  }
 }
 
 bool initBME280(){
@@ -381,17 +435,19 @@ bool readTemperature(){
   float newTemperature;
   
   if (bme680_available) {
-    newTemperature = float(int(bme680.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
+    newTemperature = float(int(iaqSensor.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
   } else if (bme280_available){
     newTemperature = float(int(bme280.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
   }
   
-  bool res = (temperature != newTemperature);
-  temperature = newTemperature;
-  Serial.print("temperature = ");
-  Serial.println(temperature);
+  if (temperature != newTemperature){
+    temperature = newTemperature;
+    Serial.print("new temperature value = ");
+    Serial.println(temperature);
+    return true;
+  }
   
-  return res;
+  return false;
 }
 
 bool readHumidity(){
@@ -401,15 +457,17 @@ bool readHumidity(){
   float newHumidity = 0.0;
   
   if (bme680_available){
-    newHumidity = int(bme680.humidity);
+    newHumidity = int(iaqSensor.humidity);
   } else if (bme280_available){
     newHumidity = int(bme280.readHumidity()); // ignore values after . 
   }
-  bool res (humidity != newHumidity);
-  humidity = newHumidity;
-  Serial.print("humidity = ");
-  Serial.println(humidity);  
-  return res;
+  if (humidity != newHumidity){
+    humidity = newHumidity;
+    Serial.print("new humidity value = ");
+    Serial.println(humidity);  
+    return true;
+  }
+  return false;
 }
 
 bool readPressure(){
@@ -418,20 +476,32 @@ bool readPressure(){
   }
   float newPressure =0.0;
   if (bme680_available){
-    newPressure = int(bme680.pressure)/100;
+    newPressure = int(iaqSensor.pressure)/100;
   } else if (bme280_available){
     newPressure = int(bme280.readPressure())/100; 
   }
   
-  bool res = (pressure != newPressure);
-  pressure = newPressure;
-  Serial.print("pressure = ");
-  Serial.println(pressure);
+  if (pressure != newPressure) {
+    pressure = newPressure;
+    Serial.print("new pressure value = ");
+    Serial.println(pressure);
+    return true;
+  }
   
-  return res;
+  return false;
 }
 
-bool readVocReference(){
+bool readCo2Equivalent(){
+  if (bme680_available){
+      float newCo2 = int(iaqSensor.co2Equivalent);
+      if (newCo2 != co2){
+        co2 = newCo2;
+        Serial.print("Co2 equivalent = ");
+        Serial.print(co2);
+        Serial.println(" ppm");
+        return true;
+      }
+  }
   return false;
 }
 
@@ -470,7 +540,6 @@ void blockingInitSession() {
     c->loop();
     delay(200);
   }
-
   Serial.println("");
 }
 
@@ -488,9 +557,8 @@ void sendPressureValue(){
 }
 
 void sendCo2Value(){
- // 
+ c->sendFloatPropertyUpdate(property_co2, co2);
 }
-
 
 void sendGaugeDimmLevelValue(){
    c->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
