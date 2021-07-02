@@ -30,14 +30,13 @@
 
 #include <EEPROM.h>
 #include <Wire.h>
-#include "marconi_client.h"
-#include <FastLED.h>
-#include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
-//#include <ESP8266TrueRandom.h>
 
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BME280.h>
-#include "bsec.h"
+#include "marconi_client.h"   // https://github.com/connctd/marconi-lib
+#include <FastLED.h>          // https://github.com/FastLED/FastLED
+#include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager
+#include <Adafruit_Sensor.h>  // https://github.com/adafruit/Adafruit_Sensor
+#include <Adafruit_BME280.h>  // https://github.com/adafruit/Adafruit_BME280_Library
+#include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library
 
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
@@ -235,7 +234,7 @@ void loop() {
   }
   c->loop();
 
-  if (loopCnt % 500 == 0){
+  if (loopCnt % 100 == 0){
     if (bme680_available){         
        if (!iaqSensor.run()){
           Serial.println("Error reading SEC values");
