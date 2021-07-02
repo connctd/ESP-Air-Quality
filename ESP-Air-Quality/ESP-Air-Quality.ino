@@ -234,15 +234,16 @@ void loop() {
   }
   c->loop();
 
-  if (loopCnt % 100 == 0){
+  if (loopCnt % 1000 == 0){ // every 10s
     if (bme680_available){         
        if (!iaqSensor.run()){
           Serial.println("Error reading SEC values");
           evalIaqSensorStatus();
-       }           
+       } else {
+          // print values?
+       }
     }   
-  }
-        
+  }        
   delay(10);
 }
 
