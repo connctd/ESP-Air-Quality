@@ -158,7 +158,10 @@ void setup() {
   
   bme680_available = initBME680();
   bme280_available = initBME280();   
-  
+
+  if (!sensorsAvailable()){
+     noSensorAnimation();
+  }  
   clearRing();
 
 }
@@ -234,15 +237,19 @@ void loop() {
   }
   c->loop();
 
-  if (loopCnt % 1000 == 0){ // every 10s
+  
     if (bme680_available){         
-       if (!iaqSensor.run()){
-          Serial.println("Error reading SEC values");
-          evalIaqSensorStatus();
-       } else {
-          // print values?
+       if (iaqSensor.run()) {
+          printIAQdata();
+       } else {        
+        // iaqSensor.run() could be fals when no new data available or when an error occurs
+        // need to check the status for this.   
+          if (!checkIaqSensorStatus()){
+              while(true){
+                errorGauge();
+              }
+          }
        }
-    }   
   }        
   delay(10);
 }
@@ -299,11 +306,11 @@ void checkButton(){
       return;
     }
     if(pressedMillis >= 10000){
-      redRing();
+      setRingColor(CRGB(255,0,0));
       return; 
     }
     if (pressedMillis >= 5000){
-      greenRing();
+      setRingColor(CRGB(0,255,0));
     }
   }
 }
@@ -351,8 +358,16 @@ bool sensorsAvailable(){
 
 bool initBME680(){
   Serial.print("Initializing BME680 ... ");  
-  iaqSensor.begin(BME680_I2C_ADDR_SECONDARY,Wire);  
+  //iaqSensor.begin(BME680_I2C_ADDR_SECONDARY,Wire);  
+
+  // check for address 0x77 
+   Wire.beginTransmission(0x77);
+   if(Wire.endTransmission()!=0){ 
+      Serial.println("ERROR");
+      return false;
+   }
   
+  iaqSensor.begin(0x77,Wire);  
   if (!checkIaqSensorStatus()){
     Serial.println("ERROR");
     evalIaqSensorStatus();
@@ -383,6 +398,7 @@ bool initBME680(){
   Serial.println("OK");
   String output = "BSEC library version " + String(iaqSensor.version.major) + "." + String(iaqSensor.version.minor) + "." + String(iaqSensor.version.major_bugfix) + "." + String(iaqSensor.version.minor_bugfix);
   Serial.println(output);  
+  
 }
 
 bool checkIaqSensorStatus(void) {
@@ -493,14 +509,19 @@ bool readPressure(){
 
 bool readCo2Equivalent(){
   if (bme680_available){
-      float newCo2 = int(iaqSensor.co2Equivalent);
-      if (newCo2 != co2){
-        co2 = newCo2;
-        Serial.print("Co2 equivalent = ");
-        Serial.print(co2);
-        Serial.println(" ppm");
-        return true;
-      }
+    if (iaqSensor.iaqAccuracy==0){
+      // sensor not calibrated yet
+      return false;
+    }
+    float newCo2 = int(iaqSensor.co2Equivalent);
+    
+    if (newCo2 != co2){
+      co2 = newCo2;  
+      Serial.print("Co2 equivalent = ");
+      Serial.print(co2);
+      Serial.println(" ppm");
+      return true;
+     }
   }
   return false;
 }
@@ -510,6 +531,23 @@ bool isButtonPressed(){
   return  digitalRead(TRIGGER_PIN) == LOW ;
 }
 
+
+void printIAQdata(){
+   String output = "raw temperature [°C], pressure [hPa], raw relative humidity [%], gas [Ohm], IAQ, IAQ accuracy, temperature [°C], relative humidity [%], Static IAQ, CO2 equivalent, breath VOC equivalent";
+   Serial.println(output);   
+   output = String(iaqSensor.rawTemperature);
+   output += ", " + String(iaqSensor.pressure);
+   output += ", " + String(iaqSensor.rawHumidity);
+   output += ", " + String(iaqSensor.gasResistance);
+   output += ", " + String(iaqSensor.iaq);
+   output += ", " + String(iaqSensor.iaqAccuracy);
+   output += ", " + String(iaqSensor.temperature);
+   output += ", " + String(iaqSensor.humidity);
+   output += ", " + String(iaqSensor.staticIaq);
+   output += ", " + String(iaqSensor.co2Equivalent);
+   output += ", " + String(iaqSensor.breathVocEquivalent);
+   Serial.println(output);
+}
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    IoT Connctd
@@ -706,7 +744,7 @@ void saveParamCallback(){
 
 void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println("[CALLBACK] configModeCallback fired");
-  blueRing();
+  setRingColor(CRGB(0,0,255));
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -776,6 +814,16 @@ int getScaleValue(int value){
 }
 
 
+void noSensorAnimation(){
+   setGaugeColor(CRGB(255,255,0));   
+    delay(500);
+    clearRing();
+    delay(500);
+    setGaugeColor(CRGB(255,255,0));   
+    delay(2000);
+    clearRing();
+}
+
 void animateGauge(int startPixel, int stopPixel){
   if (startPixel <= stopPixel) {  
     for (int i=0; i < stopPixel; i++){
@@ -799,41 +847,52 @@ void clearRing(){
   FastLED.show();  
 }
 
-
-void blueRing(){
-  for (int i=0; i <= ALLPIXELS; i++){
-      leds[i] = CRGB::Blue;    
+void setRingColor(const CRGB color){
+    for (int i=0; i <= ALLPIXELS; i++){
+      leds[i] = color;    
   }
   FastLED.show();  
 }
 
-void redRing(){
-  for (int i=0; i <= ALLPIXELS; i++){
-      leds[i] = CRGB::Red;    
+void setGaugeColor(const CRGB color){
+  for (int i=0; i <= NUMPIXELS; i++){
+      leds[i] = color;    
   }
   FastLED.show();  
 }
 
-void greenRing(){
-  for (int i=0; i <= ALLPIXELS; i++){
-      leds[i] = CRGB::Green;    
-  }
-  FastLED.show();  
-}
 
 void errorRing(){
   for (int i = 0; i<3; i++){    
     delay(150);
-    redRing();
+    setRingColor(CRGB(255,0,0));
     delay(150);
     clearRing();
   }  
 }
 
+void errorGauge(){
+  for (int i = 0; i<3; i++){    
+    delay(150);
+    setGaugeColor(CRGB(255,0,0));
+    delay(150);
+    clearRing();
+  }
+}
+
 void successRing(){
   for (int i = 0; i< 3; i++){
       delay(150);    
-      greenRing();
+      setRingColor(CRGB(0,255,0));
+      delay(150);
+      clearRing();
+    }
+}
+
+void successGauge(){
+  for (int i = 0; i< 3; i++){
+      delay(150);    
+      setGaugeColor(CRGB(0,255,0));
       delay(150);
       clearRing();
     }
