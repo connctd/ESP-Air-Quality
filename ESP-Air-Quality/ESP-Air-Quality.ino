@@ -30,7 +30,7 @@
 
 #include <EEPROM.h>
 #include <Wire.h>
-
+// additional libraries
 #include "marconi_client.h"   // https://github.com/connctd/marconi-lib
 #include <FastLED.h>          // https://github.com/FastLED/FastLED
 #include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager
@@ -38,6 +38,8 @@
 #include <Adafruit_BME280.h>  // https://github.com/adafruit/Adafruit_BME280_Library
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library
 
+
+#define VERSION "0.9.12"
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -49,8 +51,8 @@ const char* AP_SSID = "Air-Quality";
 
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
 #define LED_PIN   25
-#define NUMPIXELS 13
-#define ALLPIXELS 28
+#define NUMPIXELS 12
+#define ALLPIXELS 24
 #define LED_TYPE    WS2811
 #define COLOR_ORDER GRB
 
@@ -58,13 +60,13 @@ const char* AP_SSID = "Air-Quality";
 CRGB leds[ALLPIXELS];
 
 int animationSpeed = 50;  
-int oldScaleValue = 1;     // needed for value change animation of gauge
-int gaugeValue = 0;
-float dimmLevel = 1.0F;   // value between 0 (off) and 1 (full brightness)
+int oldScaleValue  = 1;     // needed for value change animation of gauge
+int gaugeValue     = 0;
+float dimmLevel    = 1.0F;  // value between 0 (off) and 1 (full brightness)
 
 // +++++++++++++++++++++++ Connctd +++++++++++++++++++++
 
-IPAddress ip(35,205,82,53);
+IPAddress ip(35,205,82,53);  // TODO: need to be configured as address, ip could change over time
 int port = 5683;
 
 struct DeviceConfig {    
@@ -119,6 +121,8 @@ int co2 = 0;
 
 bool bme280_available = false;
 bool bme680_available = false;
+
+
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -127,6 +131,8 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
+  Serial.print("Air Quality - ESP v");
+  Serial.println(VERSION);
   Wire.begin();
   initializeLedRing();    
   initializeRandomSeed();
@@ -238,18 +244,18 @@ void loop() {
   c->loop();
 
   
-    if (bme680_available){         
-       if (iaqSensor.run()) {
-          printIAQdata();
-       } else {        
+  if (bme680_available){         
+     if (iaqSensor.run()) {
+         printIAQdata();
+     } else {        
         // iaqSensor.run() could be fals when no new data available or when an error occurs
         // need to check the status for this.   
-          if (!checkIaqSensorStatus()){
-              while(true){
-                errorGauge();
-              }
-          }
-       }
+        if (!checkIaqSensorStatus()){
+           while(true){
+             errorGauge();
+           }
+        }
+     }
   }        
   delay(10);
 }
