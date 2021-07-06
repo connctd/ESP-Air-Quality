@@ -123,6 +123,15 @@ bool bme280_available = false;
 bool bme680_available = false;
 
 
+
+
+#define IAQA_NOT_CALIBRATED       0
+#define IAQA_UNCERTAIN            1
+#define IAQA_CALIBRATING          2
+#define IAQA_CALIBRATION_COMPLETE 4
+
+int iaq_accuracy = IAQA_NOT_CALIBRATED;
+
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -532,11 +541,38 @@ bool readCo2Equivalent(){
   return false;
 }
 
-
 bool isButtonPressed(){
   return  digitalRead(TRIGGER_PIN) == LOW ;
 }
 
+
+void evalIaqAccuracy(){
+  if (iaq_accuracy == iaqSensor.iaqAccuracy){
+    return;
+  }
+  switch (iaqSensor.iaqAccuracy){
+        case IAQA_NOT_CALIBRATED:      
+             // do nothing
+             break;  
+        case IAQA_UNCERTAIN:
+             // at least sensor is calibrated and delivers CO2 equivalents
+             saveIaqState();
+             break;
+        case IAQA_CALIBRATING:             
+             break;
+        case IAQA_CALIBRATION_COMPLETE:
+              // fully calibrated, should be saved
+             saveIaqState();
+             break;
+        default:
+             // unknown state   
+  }
+  iaq_accuracy = iagSensor.iaqAccuracy;
+}
+
+void saveIaqState(){
+    
+}
 
 void printIAQdata(){
    String output = "raw temperature [°C], pressure [hPa], raw relative humidity [%], gas [Ohm], IAQ, IAQ accuracy, temperature [°C], relative humidity [%], Static IAQ, CO2 equivalent, breath VOC equivalent";
@@ -762,16 +798,15 @@ void setGaugePercentage(int value){
   Serial.println(value);
   gaugeValue = value;
   sendGaugeValue();
+
+  int newScaleValue;
+  // at least one led should always be display for indication of proper connection and functionality
+  if (value == 0){ 
+    newScaleValue = 1;
+  } else newScaleValue = getScaleValue(value);
   
-  if (value == 0){
-    clearRing();
-    oldScaleValue = 0;
-    return;
-  }
-  int newScaleValue = getScaleValue(value);
   animateGauge(oldScaleValue, newScaleValue);
-  oldScaleValue = newScaleValue;
-  
+  oldScaleValue = newScaleValue;  
 }
 
 void setGaugeDimmLevel(int value){  
