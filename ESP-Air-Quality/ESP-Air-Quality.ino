@@ -39,7 +39,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library
 
 
-#define VERSION "0.9.12"
+#define VERSION "0.9.14"
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -74,10 +74,8 @@ struct DeviceConfig {
     unsigned char key[CHACHA_KEY_SIZE];
 };
 
-
 DeviceConfig deviceConfig;
 EEPROMClass  deviceConfigMemory("devConfig", 128);
-
 
 MarconiClient *c;
 bool initialized = false;
@@ -94,13 +92,11 @@ unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 #define property_dimmlevel   0x05
 #define property_pressure    0x06
 
-
 #define actionID_gaugeValue  0x01
 #define actionID_dimmLevel   0x05
 
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 unsigned int loopCnt = 0;
-
 
 // +++++++++++++++++++++++ Sensoring +++++++++++++++++++
 
@@ -113,15 +109,13 @@ bool buttonPressed = false;
 unsigned long buttonPressMillis = 0;
 
 float temperature = 0.0;
-float humidity = 0.0;
-float pressure = 0.0;
-float voc = 0.0;
-int co2 = 0;
-
+float humidity    = 0.0;
+float pressure    = 0.0;
+float voc         = 0.0;
+int co2           = 0;
 
 bool bme280_available = false;
 bool bme680_available = false;
-
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
@@ -616,15 +610,15 @@ void sendGaugeValue(){
 void onAction(unsigned char actionId, char *value) {
   Serial.printf("Action called. Id: %x Value: %s\n", actionId, value);
   switch (actionId){
-    case actionID_gaugeValue:
-      setGaugePercentage(String(value).toInt());
+      case actionID_gaugeValue:
+          setGaugePercentage(String(value).toInt());
+          break;
+      case actionID_dimmLevel:
+          setGaugeDimmLevel(String(value).toFloat()*100);
+          break;
+      default :
+          Serial.println("no matching Action found");
       break;
-    case actionID_dimmLevel:
-      setGaugeDimmLevel(String(value).toFloat()*100);
-      break;
-     default :
-        Serial.println("no matching Action found");
-     break;
   }
 }
 
