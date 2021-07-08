@@ -24,8 +24,7 @@ Open the Board Management and search for ```esp32```. Choose the version ```1.0.
 
 ## ESP compiler error
 
-
-Open ```platform.txt```, search for line
+For MacOS, go to folder ```~/Library/Arduino15/packages/esp32/hardware/esp32/1.0.6``` and open ```platform.txt```. Search for line
 
 		recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} {compiler.libraries.ldflags} -Wl,--start-group {object_files} "{archive_file_path}" {compiler.c.elf.libs} {build.extra_libs} -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"
 
