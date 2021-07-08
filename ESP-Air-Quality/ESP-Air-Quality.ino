@@ -573,24 +573,26 @@ void evalIaqAccuracy(){
              break;  
         case IAQA_UNCERTAIN:
              // at least sensor is calibrated and delivers CO2 equivalents
-             saveIaqState();
-             successGauge();
-             clearRing();
+             handleIaqCalibrationEvent();
              break;
         case IAQA_CALIBRATING:             
              break;
         case IAQA_CALIBRATION_COMPLETE:
               // fully calibrated, should be saved
-             saveIaqState();
-             successGauge();
-             clearRing();
+             handleIaqCalibrationEvent();
              break;
         default:
              // unknown state   
              // does not need to be handled
              break;
   }
+}
 
+void handleIaqCalibrationEvent(){
+  saveIaqState();
+  successGauge();
+  lastPropertyUpdate = 0;
+  clearRing();
 }
 
 void saveIaqState(){
