@@ -137,6 +137,8 @@ int iaq_accuracy = IAQA_NOT_CALIBRATED;
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 void setup() {  
+  initialized = false;
+  
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
@@ -210,10 +212,11 @@ void loop() {
   unsigned long currTime = millis();
   checkButton(); // check wether trigger button was pressed  
   if (!initialized) {
-      if (currTime - lastInitTry > 10000){
+      if (currTime - lastInitTry > 20000){
+        Serial.println(currTime);
+        Serial.println(lastInitTry);
         lastInitTry = currTime;
-        blockingInitSession();    
-        
+        initSession();            
       }
   }  
   if (initialized){ 
@@ -252,7 +255,6 @@ void loop() {
   }
   c->loop();
 
-  
   if (bme680_available){         
      if (iaqSensor.run()) {
          printIAQdata();
@@ -266,6 +268,7 @@ void loop() {
         }
      }
   }        
+  
   delay(10);
 }
 
@@ -566,8 +569,9 @@ void evalIaqAccuracy(){
              break;
         default:
              // unknown state   
+             break;
   }
-  iaq_accuracy = iagSensor.iaqAccuracy;
+  iaq_accuracy = iaqSensor.iaqAccuracy;
 }
 
 void saveIaqState(){
@@ -598,29 +602,12 @@ void printIAQdata(){
 
 // requestes a session id from connector which will be exchanged in every
 // message to prevent replay attacks. Can be called multiple times
-void blockingInitSession() {
-  initialized = false;
-  Serial.println("Initializing session");
-  
-  int retries = 0;
-  c->init();
-  while (!initialized) {
-    if (retries > 10) {
-      Serial.println("\nSession can not be established. Resending init");
-      retries = 0;
-      if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("No wifi connection. Abort session init");
-        return;
-      }
-      c->init();
-    }
-
-    Serial.print(".");
-    retries += 1;
-    c->loop();
-    delay(200);
+void initSession() {  
+  if (initialized) {
+    return;
   }
-  Serial.println("");
+  Serial.println("Initializing session");    
+  c->init();
 }
 
 
@@ -684,6 +671,7 @@ void onConnectionStateChange(const unsigned char state) {
       case kConnectionStateInitRejected:
         Serial.println("Session initialization has failed");
         initialized = false;
+        errorRing();
         break;
       case kConnectionObservationRequested:
         Serial.println("Observation was requested");
@@ -699,6 +687,7 @@ void onConnectionStateChange(const unsigned char state) {
 
         // after reinit we want to resubscribe
         lastResubscribe = 0;
+        errorRing();
         break;
       default:
         Serial.printf("Unknown connection event %x\n", state);
