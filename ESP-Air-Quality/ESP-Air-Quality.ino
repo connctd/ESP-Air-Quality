@@ -56,13 +56,14 @@ const char* AP_SSID = "Air-Quality";
 #define LED_TYPE    WS2811
 #define COLOR_ORDER GRB
 
-
 CRGB leds[ALLPIXELS];
 
 int animationSpeed = 50;  
 int oldScaleValue  = 1;     // needed for value change animation of gauge
 int gaugeValue     = 0;
 float dimmLevel    = 1.0F;  // value between 0 (off) and 1 (full brightness)
+
+int notCalibratedState = 0;
 
 // +++++++++++++++++++++++ Connctd +++++++++++++++++++++
 
@@ -212,7 +213,7 @@ void loop() {
   unsigned long currTime = millis();
   checkButton(); // check wether trigger button was pressed  
   if (!initialized) {
-      if (currTime - lastInitTry > 20000){
+      if (currTime - lastInitTry > 10000){
         Serial.println(currTime);
         Serial.println(lastInitTry);
         lastInitTry = currTime;
@@ -258,6 +259,7 @@ void loop() {
   if (bme680_available){         
      if (iaqSensor.run()) {
          printIAQdata();
+         evalIaqAccuracy();         
      } else {        
         // iaqSensor.run() could be fals when no new data available or when an error occurs
         // need to check the status for this.   
@@ -267,7 +269,15 @@ void loop() {
            }
         }
      }
+     
+     if (!isIaqCalibrated()){
+        if (loopCnt % 5 == 0){        
+          triggerNotCalibratedAnimation();
+        }
+     }
   }        
+
+  
   
   delay(10);
 }
@@ -548,30 +558,39 @@ bool isButtonPressed(){
   return  digitalRead(TRIGGER_PIN) == LOW ;
 }
 
+bool isIaqCalibrated(){
+  return ((iaq_accuracy!=IAQA_NOT_CALIBRATED) && (iaq_accuracy!=IAQA_CALIBRATING));
+}
 
 void evalIaqAccuracy(){
   if (iaq_accuracy == iaqSensor.iaqAccuracy){
     return;
   }
-  switch (iaqSensor.iaqAccuracy){
+  iaq_accuracy = iaqSensor.iaqAccuracy;
+  switch (iaq_accuracy){
         case IAQA_NOT_CALIBRATED:      
              // do nothing
              break;  
         case IAQA_UNCERTAIN:
              // at least sensor is calibrated and delivers CO2 equivalents
              saveIaqState();
+             successGauge();
+             clearRing();
              break;
         case IAQA_CALIBRATING:             
              break;
         case IAQA_CALIBRATION_COMPLETE:
               // fully calibrated, should be saved
              saveIaqState();
+             successGauge();
+             clearRing();
              break;
         default:
              // unknown state   
+             // does not need to be handled
              break;
   }
-  iaq_accuracy = iaqSensor.iaqAccuracy;
+
 }
 
 void saveIaqState(){
@@ -843,6 +862,19 @@ int getScaleValue(int value){
   return pixels;  
 }
 
+void triggerNotCalibratedAnimation(){ 
+  clearRing();
+  notCalibratedState++;
+  if (notCalibratedState > NUMPIXELS) {
+    notCalibratedState = -1 * (NUMPIXELS-1);
+  }
+  if (notCalibratedState > 0) {
+    leds[notCalibratedState] = CRGB(255,255,255);
+  } else {
+    leds[(-1)*notCalibratedState] = CRGB(255,255,255);
+  }
+  FastLED.show();  
+}
 
 void noSensorAnimation(){
    setGaugeColor(CRGB(255,255,0));   
