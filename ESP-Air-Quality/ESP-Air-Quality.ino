@@ -30,14 +30,16 @@
 
 #include <EEPROM.h>
 #include <Wire.h>
-#include "marconi_client.h"
-#include <FastLED.h>
-#include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
-//#include <ESP8266TrueRandom.h>
+// additional libraries
+#include "marconi_client.h"   // https://github.com/connctd/marconi-lib                   communication with connctd backend
+#include <FastLED.h>          // https://github.com/FastLED/FastLED                       LED-ring   
+#include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager                     configuration of WiFi settings via Smartphone
+#include <Adafruit_Sensor.h>  // https://github.com/adafruit/Adafruit_Sensor              common library for arduino sensors
+#include <Adafruit_BME280.h>  // https://github.com/adafruit/Adafruit_BME280_Library      library to work with BME280 sensors
+#include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with BME680 sensors and calculating CO2 equivalent
 
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BME280.h>
-#include "Adafruit_BME680.h"
+
+#define VERSION "0.9.17"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -49,22 +51,24 @@ const char* AP_SSID = "Air-Quality";
 
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
 #define LED_PIN   25
-#define NUMPIXELS 13
-#define ALLPIXELS 28
+#define NUMPIXELS 12
+#define ALLPIXELS 24
 #define LED_TYPE    WS2811
 #define COLOR_ORDER GRB
-
 
 CRGB leds[ALLPIXELS];
 
 int animationSpeed = 50;  
-int oldScaleValue = 1;     // needed for value change animation of gauge
-int gaugeValue = 0;
-float dimmLevel = 1.0F;   // value between 0 (off) and 1 (full brightness)
+int oldScaleValue  = 1;     // needed for value change animation of gauge
+int gaugeValue     = 0;
+float dimmLevel    = 1.0F;  // value between 0 (off) and 1 (full brightness)
+
+int notCalibratedState = 0;
+unsigned long lastCalibrationAnimationStep = 0;
 
 // +++++++++++++++++++++++ Connctd +++++++++++++++++++++
 
-IPAddress ip(35,205,82,53);
+IPAddress ip(35,205,82,53);  // TODO: need to be configured as address, ip could change over time
 int port = 5683;
 
 struct DeviceConfig {    
@@ -72,10 +76,8 @@ struct DeviceConfig {
     unsigned char key[CHACHA_KEY_SIZE];
 };
 
-
 DeviceConfig deviceConfig;
 EEPROMClass  deviceConfigMemory("devConfig", 128);
-
 
 MarconiClient *c;
 bool initialized = false;
@@ -91,11 +93,12 @@ unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 #define property_humidity    0x04
 #define property_dimmlevel   0x05
 #define property_pressure    0x06
+
 #define actionID_gaugeValue  0x01
 #define actionID_dimmLevel   0x05
 
 // +++++++++++++++++++++++ General +++++++++++++++++++++
-unsigned int loopCnt = 0;
+
 
 
 // +++++++++++++++++++++++ Sensoring +++++++++++++++++++
@@ -103,27 +106,42 @@ unsigned int loopCnt = 0;
 #define SEALEVELPRESSURE_HPA (1013.25)
 
 Adafruit_BME280 bme280; 
-Adafruit_BME680 bme680; 
-
 bool buttonPressed = false;
 unsigned long buttonPressMillis = 0;
 
 float temperature = 0.0;
 float humidity = 0.0;
 float pressure = 0.0;
-float voc_reference_index = 0.0;
+float voc = 0.0;
+int co2 = 0;
 
 bool bme280_available = false;
 bool bme680_available = false;
+
+Bsec iaqSensor;
+#define IAQA_NOT_CALIBRATED       0
+#define IAQA_UNCERTAIN            1
+#define IAQA_CALIBRATING          2
+#define IAQA_CALIBRATION_COMPLETE 3
+int iaq_accuracy = IAQA_NOT_CALIBRATED;
+uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
+EEPROMClass  bsecStateMemory("bsecState", BSEC_MAX_STATE_BLOB_SIZE+1);
+unsigned long bsecStateUpdateInterval = 5*60*1000; // every 5min
+unsigned long lastBsecUpdate=0;
+
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 void setup() {  
+  initialized = false;
+  
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
-
+  Serial.print("Air Quality - ESP v");
+  Serial.println(VERSION);
+  Wire.begin();
   initializeLedRing();    
   initializeRandomSeed();
   
@@ -154,7 +172,10 @@ void setup() {
   
   bme680_available = initBME680();
   bme280_available = initBME280();   
-  
+
+  if (!sensorsAvailable()){
+     noSensorAnimation();
+  }  
   clearRing();
 
 }
@@ -177,7 +198,9 @@ void initMarconi(){
 }
 
 bool initEEProm(){
-  return deviceConfigMemory.begin(0x500);
+  bool res = deviceConfigMemory.begin(0x500);
+  res = res && bsecStateMemory.begin(BSEC_MAX_STATE_BLOB_SIZE+1);
+  return res;
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -187,34 +210,26 @@ bool initEEProm(){
 void loop() {  
   unsigned long currTime = millis();
   checkButton(); // check wether trigger button was pressed  
+  // init connection to connctd backend when necessary
   if (!initialized) {
       if (currTime - lastInitTry > 10000){
         lastInitTry = currTime;
-        blockingInitSession();    
-        
+        initSession();            
       }
   }  
+
+  // if connection to connctd is estblished
   if (initialized){ 
     // resubscribe if necessary
     if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
       lastResubscribe = currTime;
       c->subscribeForActions(onAction);
-    }
+    }    
     // periodically send property updates
     if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
       lastPropertyUpdate = currTime;
       sendGaugeDimmLevelValue();
-      if (sensorsAvailable()) {
-        if (bme680_available){
-           Serial.println("Reading Sensor values");
-           if (! bme680.performReading()) {
-              Serial.println("Failed to perform reading values from BME 680:(");            
-            }
-            if (readVocReference()){
-               sendCo2Value();
-            }
-        }
-        
+      if (sensorsAvailable()) {              
         if (readTemperature()){
           sendTemperatureValue();
         }
@@ -224,22 +239,51 @@ void loop() {
         if (readPressure()){
           sendPressureValue();
         }
+        if (readCo2Equivalent()){
+          sendCo2Value();
+        }
        
       }      
     }
     
   }
   
-  loopCnt++;
+  // BME680/BSEC stuff
+  if (bme680_available){         
+     // periodically save BSEC-State
+     // TODO, this is for debugging reasons, need to be adjusted later, depending on the outcome of testing phase
+     if (currTime - lastBsecUpdate > bsecStateUpdateInterval){
+        saveBsecState();
+        lastBsecUpdate = currTime;
+     }
+     // periodicaly trigger iaqSensor
+     if (iaqSensor.run()) {
+         // in case new data is available
+         printIAQdata();
+         evalIaqAccuracy();         
+     } else {        
+        // iaqSensor.run() could be false when no new data available or when an error occurs
+        // need to check the status for this.   
+        if (!checkIaqSensorStatus()){
+           while(true){
+             errorGauge();
+           }
+        }
+     }
+     // trigger animation when sensor is calibrating
+     if (!isIaqCalibrated()){
+        if (currTime - lastCalibrationAnimationStep > animationSpeed){        
+          triggerNotCalibratedAnimation();
+          lastCalibrationAnimationStep = currTime;
+        }
+     }
+     
+  }      
 
-  
-  if (loopCnt > 65535){ // when 16bit max have been reached - do not care about 32bit systems
-    loopCnt = 0;
-  }
+  // ok, trigger marconi library 
   c->loop();
-  
+  // and wait for 10ms
   delay(10);
-
 }
 
 
@@ -250,7 +294,7 @@ void loop() {
 
 
 bool loadDeviceConfig(){
-   Serial.println("loading device configuration"); 
+   Serial.println("reading device configuration"); 
 
    deviceConfigMemory.get(0,deviceConfig);      
    Serial.print("Device ID = ");
@@ -289,16 +333,16 @@ void checkButton(){
     long pressedMillis = millis() - buttonPressMillis;
     if(pressedMillis >= 15000){
       errorRing();
-      resetConfiguration();
+      resetToFactorySettings();
       ESP.restart();
       return;
     }
     if(pressedMillis >= 10000){
-      redRing();
+      setRingColor(CRGB(255,0,0));
       return; 
     }
     if (pressedMillis >= 5000){
-      greenRing();
+      setRingColor(CRGB(0,255,0));
     }
   }
 }
@@ -330,9 +374,11 @@ void onButtonReleased(){
    refreshGauge();
 }
 
-void resetConfiguration(){
-   Serial.println("Resetting Configuration");
-   wm.resetSettings();
+void resetToFactorySettings(){   
+   Serial.println("!!!!!!!!!!!!  Performing Factory Reset  !!!!!!!!!!!!!");
+   Serial.println("Deleting Wifi Settings");
+   wm.resetSettings();   
+   eraseBsecState();
 }
 
 
@@ -340,26 +386,224 @@ void resetConfiguration(){
 //                                    Sensoring
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+// +++++++++++++++++++++++++++++++ BME680 / BSEC ++++++++++++++++++++++++++++++++
+
+bool initBME680(){
+  Serial.print("Initializing BME680 ... ");  
+  //iaqSensor.begin(BME680_I2C_ADDR_SECONDARY,Wire);  
+
+  // check for address 0x77 
+   Wire.beginTransmission(0x77);
+   if(Wire.endTransmission()!=0){ 
+      Serial.println("ERROR");
+      return false;
+   }
+  
+  iaqSensor.begin(0x77,Wire);  
+  if (!checkIaqSensorStatus()){
+    Serial.println("ERROR");
+    evalIaqSensorStatus();
+    return false;
+  }
+  
+  bsec_virtual_sensor_t sensorList[10] = {
+    BSEC_OUTPUT_RAW_TEMPERATURE,
+    BSEC_OUTPUT_RAW_PRESSURE,
+    BSEC_OUTPUT_RAW_HUMIDITY,
+    BSEC_OUTPUT_RAW_GAS,
+    BSEC_OUTPUT_IAQ,
+    BSEC_OUTPUT_STATIC_IAQ,
+    BSEC_OUTPUT_CO2_EQUIVALENT,
+    BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
+    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
+    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
+  };
+
+  
+  iaqSensor.updateSubscription(sensorList, 10, BSEC_SAMPLE_RATE_LP);
+  
+  if (!checkIaqSensorStatus()){
+    Serial.println("ERROR");
+    evalIaqSensorStatus();
+    return false;
+  }
+  Serial.println("OK");
+  String output = "BSEC library version " + String(iaqSensor.version.major) + "." + String(iaqSensor.version.minor) + "." + String(iaqSensor.version.major_bugfix) + "." + String(iaqSensor.version.minor_bugfix);
+  Serial.println(output);  
+
+  loadBsecState();
+  return true;
+}
+
+bool checkBsecState(){
+  for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++) {   
+      if (bsecState[i]!=0xFF) {
+        return true;
+      }
+  }
+  return false;
+}
+
 bool sensorsAvailable(){
   return bme280_available || bme680_available;
 }
 
-bool initBME680(){
-  Serial.print("Initializing BME680 ... ");
-  bool res = bme680.begin();
-  if (res){
-    Serial.println("OK");
-    Serial.println("BME 680 sensors will be adjusted");
-    bme680.setTemperatureOversampling(BME680_OS_8X);
-    bme680.setHumidityOversampling(BME680_OS_2X);
-    bme680.setPressureOversampling(BME680_OS_4X);
-    bme680.setIIRFilterSize(BME680_FILTER_SIZE_3);
-    bme680.setGasHeater(320, 150); // 320*C for 150 ms
-  } else {
-    Serial.println("ERROR - No BME680 found on I2C wiring with default address ");    
+void eraseBsecState(){
+  Serial.print("Erasing BSEC state ...");
+  for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE + 1; i++) {
+      bsecStateMemory.write(i, 0xFF);
+      bsecState[i]=0xFF;
   }
-  return res;
+  if(bsecStateMemory.commit()){
+    Serial.println("OK");
+  } else {
+    Serial.println("Error");
+  }
 }
+
+bool loadBsecState(){
+  getBsecState();
+  Serial.print("Reading BSEC state from EEPROM .... ");
+  bsecStateMemory.get(0,bsecState);  
+  Serial.println("OK");
+  printBsecState();
+  Serial.print("Checking BSEC state ............... ");
+  if (!checkBsecState()){
+    Serial.println("ERROR");
+    Serial.println("Not a valid BSEC state, State was propably never saved before and will be ignored");
+    return false;
+  }
+  Serial.println("OK"); 
+  Serial.print("Setting BSEC state ................ ");
+  iaqSensor.setState(bsecState);  
+  Serial.println("OK");
+  Serial.println("Reading State from BSEC again");
+  getBsecState();
+  return true;
+}
+
+void getBsecState(){ 
+  iaqSensor.getState(bsecState);
+  printBsecState();
+}
+
+void printBsecState(){
+  Serial.print("BSEC State : ");
+  for (int i = 0; i < BSEC_MAX_STATE_BLOB_SIZE+1; i++){
+    Serial.print(bsecState[i], HEX);
+    Serial.print(" ");
+  }
+  Serial.println();
+}
+
+bool saveBsecState(){
+  getBsecState();
+  Serial.print("Writing BSEC state to EEPROM .... ");
+  if (!checkIaqSensorStatus()){
+    Serial.println("ERROR");
+    evalIaqSensorStatus();
+    return false;
+  }  
+  bsecStateMemory.put(0, bsecState);
+  if (bsecStateMemory.commit()) {
+     Serial.println("OK");
+  } else {
+     Serial.println("ERROR");    
+     Serial.println("BSEC State (calibration data) could not be saved");    
+     return false;
+  }
+  return true;  
+}
+
+
+bool checkIaqSensorStatus(void) {
+  return (iaqSensor.status == BSEC_OK);
+}
+
+void evalIaqSensorStatus(){ {
+    String output;
+    if (iaqSensor.status == BSEC_OK) {
+      output = "BSEC OK : " + String(iaqSensor.status);            
+    } else { 
+      if (iaqSensor.status < BSEC_OK) {
+        output = "BSEC error code : " + String(iaqSensor.status);            
+      } else {
+        output = "BSEC warning code : " + String(iaqSensor.status);      
+      }
+    }
+    Serial.println(output); 
+
+    if (iaqSensor.bme680Status != BME680_OK) {
+      output = "BME680 error code : " + String(iaqSensor.bme680Status);
+    } else {
+      if (iaqSensor.bme680Status < BME680_OK) {
+        output = "BME680 error code : " + String(iaqSensor.bme680Status);          
+      } else {
+        output = "BME680 warning code : " + String(iaqSensor.bme680Status);      
+      }
+    }
+    Serial.println(output);      
+  }
+}
+
+
+bool isIaqCalibrated(){
+  return (iaq_accuracy!=IAQA_NOT_CALIBRATED);
+}
+
+void evalIaqAccuracy(){ 
+  if (iaq_accuracy == iaqSensor.iaqAccuracy){
+    return;
+  }
+  Serial.println("New IAQ Accuracy detected");
+  iaq_accuracy = iaqSensor.iaqAccuracy;
+  switch (iaq_accuracy){
+        case IAQA_NOT_CALIBRATED:      
+             // do nothing
+             break;  
+        case IAQA_UNCERTAIN:
+             // at least sensor is calibrated and delivers CO2 equivalents
+             handleIaqCalibrationEvent();
+             break;
+        case IAQA_CALIBRATING:             
+             break;
+        case IAQA_CALIBRATION_COMPLETE:
+              // fully calibrated, should be saved
+             handleIaqCalibrationEvent();
+             break;
+        default:
+             // unknown state   
+             // does not need to be handled
+             break;
+  }
+}
+
+void handleIaqCalibrationEvent(){
+  saveBsecState();
+  successGauge();
+  lastPropertyUpdate = 0;
+  clearRing();
+  refreshGauge();
+}
+
+void printIAQdata(){
+   String output = "raw temperature [°C], pressure [hPa], raw relative humidity [%], gas [Ohm], IAQ, IAQ accuracy, temperature [°C], relative humidity [%], Static IAQ, CO2 equivalent, breath VOC equivalent";
+   Serial.println(output);   
+   output = String(iaqSensor.rawTemperature);
+   output += ", " + String(iaqSensor.pressure);
+   output += ", " + String(iaqSensor.rawHumidity);
+   output += ", " + String(iaqSensor.gasResistance);
+   output += ", " + String(iaqSensor.iaq);
+   output += ", " + String(iaqSensor.iaqAccuracy);
+   output += ", " + String(iaqSensor.temperature);
+   output += ", " + String(iaqSensor.humidity);
+   output += ", " + String(iaqSensor.staticIaq);
+   output += ", " + String(iaqSensor.co2Equivalent);
+   output += ", " + String(iaqSensor.breathVocEquivalent);
+   Serial.println(output);
+}
+
+// +++++++++++++++++++++++++++++++++++ BME280 +++++++++++++++++++++++++++++++++++
 
 bool initBME280(){
   Serial.print("Initializing BME280 ... ");
@@ -367,12 +611,15 @@ bool initBME280(){
   if (res){
     Serial.println("OK");
   } else {
-    Serial.print("ERROR - No BME280 found on I2C wiring with address ");
-    Serial.println(BME280_ADDRESS_ALTERNATE);
-    
+    Serial.println("ERROR");
+    Serial.print("No BME280 found on I2C wiring with address ");
+    Serial.println(BME280_ADDRESS_ALTERNATE);    
   }
   return res;
 }
+
+
+// +++++++++++++++++++++++++++ updating Sensor values ++++++++++++++++++++++++++++
 
 bool readTemperature(){  
   if (!sensorsAvailable()) {
@@ -381,17 +628,19 @@ bool readTemperature(){
   float newTemperature;
   
   if (bme680_available) {
-    newTemperature = float(int(bme680.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
+    newTemperature = float(int(iaqSensor.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
   } else if (bme280_available){
     newTemperature = float(int(bme280.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
   }
   
-  bool res = (temperature != newTemperature);
-  temperature = newTemperature;
-  Serial.print("temperature = ");
-  Serial.println(temperature);
+  if (temperature != newTemperature){
+    temperature = newTemperature;
+    Serial.print("new temperature value = ");
+    Serial.println(temperature);
+    return true;
+  }
   
-  return res;
+  return false;
 }
 
 bool readHumidity(){
@@ -401,15 +650,17 @@ bool readHumidity(){
   float newHumidity = 0.0;
   
   if (bme680_available){
-    newHumidity = int(bme680.humidity);
+    newHumidity = int(iaqSensor.humidity);
   } else if (bme280_available){
     newHumidity = int(bme280.readHumidity()); // ignore values after . 
   }
-  bool res (humidity != newHumidity);
-  humidity = newHumidity;
-  Serial.print("humidity = ");
-  Serial.println(humidity);  
-  return res;
+  if (humidity != newHumidity){
+    humidity = newHumidity;
+    Serial.print("new humidity value = ");
+    Serial.println(humidity);  
+    return true;
+  }
+  return false;
 }
 
 bool readPressure(){
@@ -418,28 +669,45 @@ bool readPressure(){
   }
   float newPressure =0.0;
   if (bme680_available){
-    newPressure = int(bme680.pressure)/100;
+    newPressure = int(iaqSensor.pressure)/100;
   } else if (bme280_available){
     newPressure = int(bme280.readPressure())/100; 
   }
   
-  bool res = (pressure != newPressure);
-  pressure = newPressure;
-  Serial.print("pressure = ");
-  Serial.println(pressure);
+  if (pressure != newPressure) {
+    pressure = newPressure;
+    Serial.print("new pressure value = ");
+    Serial.println(pressure);
+    return true;
+  }
   
-  return res;
-}
-
-bool readVocReference(){
   return false;
 }
 
+bool readCo2Equivalent(){
+  if (bme680_available){
+    if (iaqSensor.iaqAccuracy==0){
+      // sensor not calibrated yet
+      return false;
+    }
+    float newCo2 = int(iaqSensor.co2Equivalent);
+    
+    if (newCo2 != co2){
+      co2 = newCo2;  
+      Serial.print("Co2 equivalent = ");
+      Serial.print(co2);
+      Serial.println(" ppm");
+      return true;
+     }
+  }
+  return false;
+}
+
+// +++++++++++++++++++++++++++++++++++ Button +++++++++++++++++++++++++++++++++++
 
 bool isButtonPressed(){
   return  digitalRead(TRIGGER_PIN) == LOW ;
 }
-
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    IoT Connctd
@@ -448,30 +716,12 @@ bool isButtonPressed(){
 
 // requestes a session id from connector which will be exchanged in every
 // message to prevent replay attacks. Can be called multiple times
-void blockingInitSession() {
-  initialized = false;
-  Serial.println("Initializing session");
-  
-  int retries = 0;
-  c->init();
-  while (!initialized) {
-    if (retries > 10) {
-      Serial.println("\nSession can not be established. Resending init");
-      retries = 0;
-      if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("No wifi connection. Abort session init");
-        return;
-      }
-      c->init();
-    }
-
-    Serial.print(".");
-    retries += 1;
-    c->loop();
-    delay(200);
+void initSession() {  
+  if (initialized) {
+    return;
   }
-
-  Serial.println("");
+  Serial.println("Initializing session");    
+  c->init();
 }
 
 
@@ -488,9 +738,8 @@ void sendPressureValue(){
 }
 
 void sendCo2Value(){
- // 
+ c->sendFloatPropertyUpdate(property_co2, co2);
 }
-
 
 void sendGaugeDimmLevelValue(){
    c->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
@@ -536,6 +785,7 @@ void onConnectionStateChange(const unsigned char state) {
       case kConnectionStateInitRejected:
         Serial.println("Session initialization has failed");
         initialized = false;
+        errorRing();
         break;
       case kConnectionObservationRequested:
         Serial.println("Observation was requested");
@@ -551,6 +801,7 @@ void onConnectionStateChange(const unsigned char state) {
 
         // after reinit we want to resubscribe
         lastResubscribe = 0;
+        errorRing();
         break;
       default:
         Serial.printf("Unknown connection event %x\n", state);
@@ -638,7 +889,7 @@ void saveParamCallback(){
 
 void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println("[CALLBACK] configModeCallback fired");
-  blueRing();
+  setRingColor(CRGB(0,0,255));
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -650,16 +901,15 @@ void setGaugePercentage(int value){
   Serial.println(value);
   gaugeValue = value;
   sendGaugeValue();
+
+  int newScaleValue;
+  // at least one led should always be display for indication of proper connection and functionality
+  if (value == 0){ 
+    newScaleValue = 1;
+  } else newScaleValue = getScaleValue(value);
   
-  if (value == 0){
-    clearRing();
-    oldScaleValue = 0;
-    return;
-  }
-  int newScaleValue = getScaleValue(value);
   animateGauge(oldScaleValue, newScaleValue);
-  oldScaleValue = newScaleValue;
-  
+  oldScaleValue = newScaleValue;  
 }
 
 void setGaugeDimmLevel(int value){  
@@ -707,6 +957,29 @@ int getScaleValue(int value){
   return pixels;  
 }
 
+void triggerNotCalibratedAnimation(){ 
+  clearRing();
+  notCalibratedState++;
+  if (notCalibratedState > NUMPIXELS) {
+    notCalibratedState = -1 * (NUMPIXELS-1);
+  }
+  if (notCalibratedState > 0) {
+    leds[notCalibratedState] = CRGB(255,255,255);
+  } else {
+    leds[(-1)*notCalibratedState] = CRGB(255,255,255);
+  }
+  FastLED.show();  
+}
+
+void noSensorAnimation(){
+   setGaugeColor(CRGB(255,255,0));   
+    delay(500);
+    clearRing();
+    delay(500);
+    setGaugeColor(CRGB(255,255,0));   
+    delay(2000);
+    clearRing();
+}
 
 void animateGauge(int startPixel, int stopPixel){
   if (startPixel <= stopPixel) {  
@@ -731,41 +1004,52 @@ void clearRing(){
   FastLED.show();  
 }
 
-
-void blueRing(){
-  for (int i=0; i <= ALLPIXELS; i++){
-      leds[i] = CRGB::Blue;    
+void setRingColor(const CRGB color){
+    for (int i=0; i <= ALLPIXELS; i++){
+      leds[i] = color;    
   }
   FastLED.show();  
 }
 
-void redRing(){
-  for (int i=0; i <= ALLPIXELS; i++){
-      leds[i] = CRGB::Red;    
+void setGaugeColor(const CRGB color){
+  for (int i=0; i <= NUMPIXELS; i++){
+      leds[i] = color;    
   }
   FastLED.show();  
 }
 
-void greenRing(){
-  for (int i=0; i <= ALLPIXELS; i++){
-      leds[i] = CRGB::Green;    
-  }
-  FastLED.show();  
-}
 
 void errorRing(){
   for (int i = 0; i<3; i++){    
     delay(150);
-    redRing();
+    setRingColor(CRGB(255,0,0));
     delay(150);
     clearRing();
   }  
 }
 
+void errorGauge(){
+  for (int i = 0; i<3; i++){    
+    delay(150);
+    setGaugeColor(CRGB(255,0,0));
+    delay(150);
+    clearRing();
+  }
+}
+
 void successRing(){
   for (int i = 0; i< 3; i++){
       delay(150);    
-      greenRing();
+      setRingColor(CRGB(0,255,0));
+      delay(150);
+      clearRing();
+    }
+}
+
+void successGauge(){
+  for (int i = 0; i< 3; i++){
+      delay(150);    
+      setGaugeColor(CRGB(0,255,0));
       delay(150);
       clearRing();
     }
