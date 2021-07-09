@@ -39,7 +39,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "0.9.16"  // major.minor.build
+#define VERSION "0.9.17"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -76,10 +76,8 @@ struct DeviceConfig {
     unsigned char key[CHACHA_KEY_SIZE];
 };
 
-
 DeviceConfig deviceConfig;
 EEPROMClass  deviceConfigMemory("devConfig", 128);
-
 
 MarconiClient *c;
 bool initialized = false;
@@ -96,7 +94,6 @@ unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 #define property_dimmlevel   0x05
 #define property_pressure    0x06
 
-
 #define actionID_gaugeValue  0x01
 #define actionID_dimmLevel   0x05
 
@@ -109,8 +106,6 @@ unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 #define SEALEVELPRESSURE_HPA (1013.25)
 
 Adafruit_BME280 bme280; 
-Bsec iaqSensor;
-
 bool buttonPressed = false;
 unsigned long buttonPressMillis = 0;
 
@@ -120,20 +115,15 @@ float pressure = 0.0;
 float voc = 0.0;
 int co2 = 0;
 
-
 bool bme280_available = false;
 bool bme680_available = false;
 
-
-
-
+Bsec iaqSensor;
 #define IAQA_NOT_CALIBRATED       0
 #define IAQA_UNCERTAIN            1
 #define IAQA_CALIBRATING          2
 #define IAQA_CALIBRATION_COMPLETE 3
-
 int iaq_accuracy = IAQA_NOT_CALIBRATED;
-
 uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
 EEPROMClass  bsecStateMemory("bsecState", BSEC_MAX_STATE_BLOB_SIZE+1);
 unsigned long bsecStateUpdateInterval = 5*60*1000; // every 5min
@@ -304,7 +294,7 @@ void loop() {
 
 
 bool loadDeviceConfig(){
-   Serial.println("loading device configuration"); 
+   Serial.println("reading device configuration"); 
 
    deviceConfigMemory.get(0,deviceConfig);      
    Serial.print("Device ID = ");
@@ -384,8 +374,7 @@ void onButtonReleased(){
    refreshGauge();
 }
 
-void resetToFactorySettings(){
-   
+void resetToFactorySettings(){   
    Serial.println("!!!!!!!!!!!!  Performing Factory Reset  !!!!!!!!!!!!!");
    Serial.println("Deleting Wifi Settings");
    wm.resetSettings();   
@@ -493,13 +482,13 @@ bool loadBsecState(){
   return true;
 }
 
-void getBsecState(){
-  Serial.print("BSEC State : ");
+void getBsecState(){ 
   iaqSensor.getState(bsecState);
   printBsecState();
 }
 
 void printBsecState(){
+  Serial.print("BSEC State : ");
   for (int i = 0; i < BSEC_MAX_STATE_BLOB_SIZE+1; i++){
     Serial.print(bsecState[i], HEX);
     Serial.print(" ");
