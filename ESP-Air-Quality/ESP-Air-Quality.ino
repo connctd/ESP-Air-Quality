@@ -133,6 +133,9 @@ bool bme680_available = false;
 
 int iaq_accuracy = IAQA_NOT_CALIBRATED;
 
+uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
+EEPROMClass  bsecStateMemory("bsecState", BSEC_MAX_STATE_BLOB_SIZE+1);
+
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -202,7 +205,9 @@ void initMarconi(){
 }
 
 bool initEEProm(){
-  return deviceConfigMemory.begin(0x500);
+  bool res = deviceConfigMemory.begin(0x500);
+  res = res && bsecStateMemory.begin(BSEC_MAX_STATE_BLOB_SIZE+1);
+  return res;
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -329,7 +334,7 @@ void checkButton(){
     long pressedMillis = millis() - buttonPressMillis;
     if(pressedMillis >= 15000){
       errorRing();
-      resetConfiguration();
+      resetToFactorySettings();
       ESP.restart();
       return;
     }
@@ -370,15 +375,87 @@ void onButtonReleased(){
    refreshGauge();
 }
 
-void resetConfiguration(){
-   Serial.println("Resetting Configuration");
-   wm.resetSettings();
+void resetToFactorySettings(){
+   
+   Serial.println("!!!!!!!!!!!!  Performing Factory Reset  !!!!!!!!!!!!!");
+   Serial.println("Deleting Wifi Settings");
+   wm.resetSettings();   
+   eraseBsecState();
 }
 
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    Sensoring
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+void eraseBsecState(){
+  Serial.print("Erasing BSEC state ...");
+  for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE + 1; i++) {
+      bsecStateMemory.write(i, 0xFF);
+      bsecState[i]=0xFF;
+  }
+  if(bsecStateMemory.commit()){
+    Serial.println("OK");
+  } else {
+    Serial.println("Error");
+  }
+}
+
+bool loadBsecState(){
+  Serial.print("Reading BSEC state from EEPROM .... ");
+  bsecStateMemory.get(0,bsecState);  
+  Serial.println("OK");
+  
+  
+  Serial.print("BSEC State = ");
+  for (int i = 0; i < BSEC_MAX_STATE_BLOB_SIZE+1; i++){
+    Serial.print(bsecState[i], HEX);
+    Serial.print(" ");
+  }
+  Serial.println();
+  Serial.print("Checking BSEC state ............... ");
+  if (!checkBsecState()){
+    Serial.println("ERROR");
+    Serial.println("Not a valid BSEC state, State was propably never saved before and will be ignored");
+    return false;
+  }
+  Serial.println("OK"); 
+  Serial.print("Setting BSEC state ................ ");
+  //iaqSensor.setState(bsecState);
+  Serial.println("OK");
+  return true;
+}
+
+bool saveBsecState(){
+  Serial.print("Writing BSEC state to EEPROM .... ");
+  if (!checkIaqSensorStatus()){
+    Serial.println("ERROR");
+    evalIaqSensorStatus();
+    return false;
+  }
+  iaqSensor.getState(bsecState);
+  
+  bsecStateMemory.put(0, bsecState);
+  if (bsecStateMemory.commit()) {
+     Serial.println("OK");
+  } else {
+     Serial.println("ERROR");    
+     Serial.println("BSEC State (calibration data) could not be saved");    
+     return false;
+  }
+  return true;
+  
+}
+
+bool checkBsecState(){
+  for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++) {   
+      if (bsecState[i]!=0xFF) {
+        return true;
+      }
+  }
+  return false;
+}
 
 bool sensorsAvailable(){
   return bme280_available || bme680_available;
@@ -426,7 +503,9 @@ bool initBME680(){
   Serial.println("OK");
   String output = "BSEC library version " + String(iaqSensor.version.major) + "." + String(iaqSensor.version.minor) + "." + String(iaqSensor.version.major_bugfix) + "." + String(iaqSensor.version.minor_bugfix);
   Serial.println(output);  
-  
+
+  loadBsecState();
+  return true;
 }
 
 bool checkIaqSensorStatus(void) {
@@ -589,15 +668,14 @@ void evalIaqAccuracy(){
 }
 
 void handleIaqCalibrationEvent(){
-  saveIaqState();
+  saveBsecState();
   successGauge();
   lastPropertyUpdate = 0;
   clearRing();
+  refreshGauge();
 }
 
-void saveIaqState(){
-    
-}
+
 
 void printIAQdata(){
    String output = "raw temperature [°C], pressure [hPa], raw relative humidity [%], gas [Ohm], IAQ, IAQ accuracy, temperature [°C], relative humidity [%], Static IAQ, CO2 equivalent, breath VOC equivalent";
