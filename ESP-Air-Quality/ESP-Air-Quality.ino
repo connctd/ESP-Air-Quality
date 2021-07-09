@@ -39,7 +39,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library
 
 
-#define VERSION "0.9.14"  // major.minor.build
+#define VERSION "0.9.15"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -64,6 +64,7 @@ int gaugeValue     = 0;
 float dimmLevel    = 1.0F;  // value between 0 (off) and 1 (full brightness)
 
 int notCalibratedState = 0;
+unsigned long lastCalibrationAnimationStep = 0;
 
 // +++++++++++++++++++++++ Connctd +++++++++++++++++++++
 
@@ -100,7 +101,7 @@ unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 #define actionID_dimmLevel   0x05
 
 // +++++++++++++++++++++++ General +++++++++++++++++++++
-unsigned int loopCnt = 0;
+
 
 
 // +++++++++++++++++++++++ Sensoring +++++++++++++++++++
@@ -219,14 +220,15 @@ bool initEEProm(){
 void loop() {  
   unsigned long currTime = millis();
   checkButton(); // check wether trigger button was pressed  
+  // init connection to connctd backend when necessary
   if (!initialized) {
       if (currTime - lastInitTry > 10000){
-        Serial.println(currTime);
-        Serial.println(lastInitTry);
         lastInitTry = currTime;
         initSession();            
       }
   }  
+
+  // if connection to connctd is estblished
   if (initialized){ 
     // resubscribe if necessary
     if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
@@ -256,19 +258,15 @@ void loop() {
     
   }
   
-  loopCnt++;
-  
-  if (loopCnt > 65535){ 
-    loopCnt = 0;
-  }
-  c->loop();
-
+  // BME680/BSEC stuff
   if (bme680_available){         
+     // periodicaly trigger iaqSensor
      if (iaqSensor.run()) {
+         // in case new data is available
          printIAQdata();
          evalIaqAccuracy();         
      } else {        
-        // iaqSensor.run() could be fals when no new data available or when an error occurs
+        // iaqSensor.run() could be false when no new data available or when an error occurs
         // need to check the status for this.   
         if (!checkIaqSensorStatus()){
            while(true){
@@ -276,17 +274,24 @@ void loop() {
            }
         }
      }
-     
+     // trigger animation when sensor is calibrating
      if (!isIaqCalibrated()){
-        if (loopCnt % 5 == 0){        
+        if (currTime - lastCalibrationAnimationStep > animationSpeed){        
           triggerNotCalibratedAnimation();
+          lastCalibrationAnimationStep = currTime;
         }
      }
+     // periodically save BSEC-State
+     // TODO, this is for debugging reasons, need to be adjusted later, depending on the outcome of testing phase
      if (currTime - lastBsecUpdate > bsecStateUpdateInterval){
         saveBsecState();
         lastBsecUpdate = currTime;
      }
-  }          
+  }      
+
+  // ok, trigger marconi library 
+  c->loop();
+  // and wait for 10ms
   delay(10);
 }
 
