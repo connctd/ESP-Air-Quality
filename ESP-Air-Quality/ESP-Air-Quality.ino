@@ -31,15 +31,15 @@
 #include <EEPROM.h>
 #include <Wire.h>
 // additional libraries
-#include "marconi_client.h"   // https://github.com/connctd/marconi-lib
-#include <FastLED.h>          // https://github.com/FastLED/FastLED
-#include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager
-#include <Adafruit_Sensor.h>  // https://github.com/adafruit/Adafruit_Sensor
-#include <Adafruit_BME280.h>  // https://github.com/adafruit/Adafruit_BME280_Library
-#include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library
+#include "marconi_client.h"   // https://github.com/connctd/marconi-lib                   communication with connctd backend
+#include <FastLED.h>          // https://github.com/FastLED/FastLED                       LED-ring   
+#include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager                     configuration of WiFi settings via Smartphone
+#include <Adafruit_Sensor.h>  // https://github.com/adafruit/Adafruit_Sensor              common library for arduino sensors
+#include <Adafruit_BME280.h>  // https://github.com/adafruit/Adafruit_BME280_Library      library to work with BME280 sensors
+#include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "0.9.15"  // major.minor.build
+#define VERSION "0.9.16"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -397,82 +397,7 @@ void resetToFactorySettings(){
 //                                    Sensoring
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-
-void eraseBsecState(){
-  Serial.print("Erasing BSEC state ...");
-  for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE + 1; i++) {
-      bsecStateMemory.write(i, 0xFF);
-      bsecState[i]=0xFF;
-  }
-  if(bsecStateMemory.commit()){
-    Serial.println("OK");
-  } else {
-    Serial.println("Error");
-  }
-}
-
-bool loadBsecState(){
-  getBsecState();
-  Serial.print("Reading BSEC state from EEPROM .... ");
-  bsecStateMemory.get(0,bsecState);  
-  Serial.println("OK");
-  getBsecState();  
-  Serial.print("Checking BSEC state ............... ");
-  if (!checkBsecState()){
-    Serial.println("ERROR");
-    Serial.println("Not a valid BSEC state, State was propably never saved before and will be ignored");
-    return false;
-  }
-  Serial.println("OK"); 
-  Serial.print("Setting BSEC state ................ ");
-  iaqSensor.setState(bsecState);  
-  Serial.println("OK");
-  getBsecState();
-  return true;
-}
-
-void getBsecState(){
-  Serial.print("BSEC State : ");
-  iaqSensor.getState(bsecState);
-  for (int i = 0; i < BSEC_MAX_STATE_BLOB_SIZE+1; i++){
-    Serial.print(bsecState[i], HEX);
-    Serial.print(" ");
-  }
-  Serial.println();
-}
-
-bool saveBsecState(){
-  getBsecState();
-  Serial.print("Writing BSEC state to EEPROM .... ");
-  if (!checkIaqSensorStatus()){
-    Serial.println("ERROR");
-    evalIaqSensorStatus();
-    return false;
-  }  
-  bsecStateMemory.put(0, bsecState);
-  if (bsecStateMemory.commit()) {
-     Serial.println("OK");
-  } else {
-     Serial.println("ERROR");    
-     Serial.println("BSEC State (calibration data) could not be saved");    
-     return false;
-  }
-  return true;
-  
-}
-
-bool checkBsecState(){
-  for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++) {   
-      if (bsecState[i]!=0xFF) {
-        return true;
-      }
-  }
-  return false;
-}
-
-bool sensorsAvailable(){
-  return bme280_available || bme680_available;
-}
+// +++++++++++++++++++++++++++++++ BME680 / BSEC ++++++++++++++++++++++++++++++++
 
 bool initBME680(){
   Serial.print("Initializing BME680 ... ");  
@@ -521,6 +446,87 @@ bool initBME680(){
   return true;
 }
 
+bool checkBsecState(){
+  for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++) {   
+      if (bsecState[i]!=0xFF) {
+        return true;
+      }
+  }
+  return false;
+}
+
+bool sensorsAvailable(){
+  return bme280_available || bme680_available;
+}
+
+void eraseBsecState(){
+  Serial.print("Erasing BSEC state ...");
+  for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE + 1; i++) {
+      bsecStateMemory.write(i, 0xFF);
+      bsecState[i]=0xFF;
+  }
+  if(bsecStateMemory.commit()){
+    Serial.println("OK");
+  } else {
+    Serial.println("Error");
+  }
+}
+
+bool loadBsecState(){
+  getBsecState();
+  Serial.print("Reading BSEC state from EEPROM .... ");
+  bsecStateMemory.get(0,bsecState);  
+  Serial.println("OK");
+  printBsecState();
+  Serial.print("Checking BSEC state ............... ");
+  if (!checkBsecState()){
+    Serial.println("ERROR");
+    Serial.println("Not a valid BSEC state, State was propably never saved before and will be ignored");
+    return false;
+  }
+  Serial.println("OK"); 
+  Serial.print("Setting BSEC state ................ ");
+  iaqSensor.setState(bsecState);  
+  Serial.println("OK");
+  Serial.println("Reading State from BSEC again");
+  getBsecState();
+  return true;
+}
+
+void getBsecState(){
+  Serial.print("BSEC State : ");
+  iaqSensor.getState(bsecState);
+  printBsecState();
+}
+
+void printBsecState(){
+  for (int i = 0; i < BSEC_MAX_STATE_BLOB_SIZE+1; i++){
+    Serial.print(bsecState[i], HEX);
+    Serial.print(" ");
+  }
+  Serial.println();
+}
+
+bool saveBsecState(){
+  getBsecState();
+  Serial.print("Writing BSEC state to EEPROM .... ");
+  if (!checkIaqSensorStatus()){
+    Serial.println("ERROR");
+    evalIaqSensorStatus();
+    return false;
+  }  
+  bsecStateMemory.put(0, bsecState);
+  if (bsecStateMemory.commit()) {
+     Serial.println("OK");
+  } else {
+     Serial.println("ERROR");    
+     Serial.println("BSEC State (calibration data) could not be saved");    
+     return false;
+  }
+  return true;  
+}
+
+
 bool checkIaqSensorStatus(void) {
   return (iaqSensor.status == BSEC_OK);
 }
@@ -551,18 +557,80 @@ void evalIaqSensorStatus(){ {
   }
 }
 
+
+bool isIaqCalibrated(){
+  return (iaq_accuracy!=IAQA_NOT_CALIBRATED);
+}
+
+void evalIaqAccuracy(){ 
+  if (iaq_accuracy == iaqSensor.iaqAccuracy){
+    return;
+  }
+  Serial.println("New IAQ Accuracy detected");
+  iaq_accuracy = iaqSensor.iaqAccuracy;
+  switch (iaq_accuracy){
+        case IAQA_NOT_CALIBRATED:      
+             // do nothing
+             break;  
+        case IAQA_UNCERTAIN:
+             // at least sensor is calibrated and delivers CO2 equivalents
+             handleIaqCalibrationEvent();
+             break;
+        case IAQA_CALIBRATING:             
+             break;
+        case IAQA_CALIBRATION_COMPLETE:
+              // fully calibrated, should be saved
+             handleIaqCalibrationEvent();
+             break;
+        default:
+             // unknown state   
+             // does not need to be handled
+             break;
+  }
+}
+
+void handleIaqCalibrationEvent(){
+  saveBsecState();
+  successGauge();
+  lastPropertyUpdate = 0;
+  clearRing();
+  refreshGauge();
+}
+
+void printIAQdata(){
+   String output = "raw temperature [°C], pressure [hPa], raw relative humidity [%], gas [Ohm], IAQ, IAQ accuracy, temperature [°C], relative humidity [%], Static IAQ, CO2 equivalent, breath VOC equivalent";
+   Serial.println(output);   
+   output = String(iaqSensor.rawTemperature);
+   output += ", " + String(iaqSensor.pressure);
+   output += ", " + String(iaqSensor.rawHumidity);
+   output += ", " + String(iaqSensor.gasResistance);
+   output += ", " + String(iaqSensor.iaq);
+   output += ", " + String(iaqSensor.iaqAccuracy);
+   output += ", " + String(iaqSensor.temperature);
+   output += ", " + String(iaqSensor.humidity);
+   output += ", " + String(iaqSensor.staticIaq);
+   output += ", " + String(iaqSensor.co2Equivalent);
+   output += ", " + String(iaqSensor.breathVocEquivalent);
+   Serial.println(output);
+}
+
+// +++++++++++++++++++++++++++++++++++ BME280 +++++++++++++++++++++++++++++++++++
+
 bool initBME280(){
   Serial.print("Initializing BME280 ... ");
   bool res = bme280.begin(BME280_ADDRESS_ALTERNATE, &Wire);
   if (res){
     Serial.println("OK");
   } else {
-    Serial.print("ERROR - No BME280 found on I2C wiring with address ");
-    Serial.println(BME280_ADDRESS_ALTERNATE);
-    
+    Serial.println("ERROR");
+    Serial.print("No BME280 found on I2C wiring with address ");
+    Serial.println(BME280_ADDRESS_ALTERNATE);    
   }
   return res;
 }
+
+
+// +++++++++++++++++++++++++++ updating Sensor values ++++++++++++++++++++++++++++
 
 bool readTemperature(){  
   if (!sensorsAvailable()) {
@@ -646,66 +714,10 @@ bool readCo2Equivalent(){
   return false;
 }
 
+// +++++++++++++++++++++++++++++++++++ Button +++++++++++++++++++++++++++++++++++
+
 bool isButtonPressed(){
   return  digitalRead(TRIGGER_PIN) == LOW ;
-}
-
-bool isIaqCalibrated(){
-  return (iaq_accuracy!=IAQA_NOT_CALIBRATED);
-}
-
-void evalIaqAccuracy(){ 
-  if (iaq_accuracy == iaqSensor.iaqAccuracy){
-    return;
-  }
-  Serial.println("New IAQ Accuracy detected");
-  iaq_accuracy = iaqSensor.iaqAccuracy;
-  switch (iaq_accuracy){
-        case IAQA_NOT_CALIBRATED:      
-             // do nothing
-             break;  
-        case IAQA_UNCERTAIN:
-             // at least sensor is calibrated and delivers CO2 equivalents
-             handleIaqCalibrationEvent();
-             break;
-        case IAQA_CALIBRATING:             
-             break;
-        case IAQA_CALIBRATION_COMPLETE:
-              // fully calibrated, should be saved
-             handleIaqCalibrationEvent();
-             break;
-        default:
-             // unknown state   
-             // does not need to be handled
-             break;
-  }
-}
-
-void handleIaqCalibrationEvent(){
-  saveBsecState();
-  successGauge();
-  lastPropertyUpdate = 0;
-  clearRing();
-  refreshGauge();
-}
-
-
-
-void printIAQdata(){
-   String output = "raw temperature [°C], pressure [hPa], raw relative humidity [%], gas [Ohm], IAQ, IAQ accuracy, temperature [°C], relative humidity [%], Static IAQ, CO2 equivalent, breath VOC equivalent";
-   Serial.println(output);   
-   output = String(iaqSensor.rawTemperature);
-   output += ", " + String(iaqSensor.pressure);
-   output += ", " + String(iaqSensor.rawHumidity);
-   output += ", " + String(iaqSensor.gasResistance);
-   output += ", " + String(iaqSensor.iaq);
-   output += ", " + String(iaqSensor.iaqAccuracy);
-   output += ", " + String(iaqSensor.temperature);
-   output += ", " + String(iaqSensor.humidity);
-   output += ", " + String(iaqSensor.staticIaq);
-   output += ", " + String(iaqSensor.co2Equivalent);
-   output += ", " + String(iaqSensor.breathVocEquivalent);
-   Serial.println(output);
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
