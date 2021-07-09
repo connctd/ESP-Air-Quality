@@ -130,7 +130,7 @@ bool bme680_available = false;
 #define IAQA_NOT_CALIBRATED       0
 #define IAQA_UNCERTAIN            1
 #define IAQA_CALIBRATING          2
-#define IAQA_CALIBRATION_COMPLETE 4
+#define IAQA_CALIBRATION_COMPLETE 3
 
 int iaq_accuracy = IAQA_NOT_CALIBRATED;
 
@@ -260,6 +260,12 @@ void loop() {
   
   // BME680/BSEC stuff
   if (bme680_available){         
+     // periodically save BSEC-State
+     // TODO, this is for debugging reasons, need to be adjusted later, depending on the outcome of testing phase
+     if (currTime - lastBsecUpdate > bsecStateUpdateInterval){
+        saveBsecState();
+        lastBsecUpdate = currTime;
+     }
      // periodicaly trigger iaqSensor
      if (iaqSensor.run()) {
          // in case new data is available
@@ -281,12 +287,7 @@ void loop() {
           lastCalibrationAnimationStep = currTime;
         }
      }
-     // periodically save BSEC-State
-     // TODO, this is for debugging reasons, need to be adjusted later, depending on the outcome of testing phase
-     if (currTime - lastBsecUpdate > bsecStateUpdateInterval){
-        saveBsecState();
-        lastBsecUpdate = currTime;
-     }
+     
   }      
 
   // ok, trigger marconi library 
@@ -650,13 +651,14 @@ bool isButtonPressed(){
 }
 
 bool isIaqCalibrated(){
-  return ((iaq_accuracy!=IAQA_NOT_CALIBRATED) && (iaq_accuracy!=IAQA_CALIBRATING));
+  return (iaq_accuracy!=IAQA_NOT_CALIBRATED);
 }
 
-void evalIaqAccuracy(){
+void evalIaqAccuracy(){ 
   if (iaq_accuracy == iaqSensor.iaqAccuracy){
     return;
   }
+  Serial.println("New IAQ Accuracy detected");
   iaq_accuracy = iaqSensor.iaqAccuracy;
   switch (iaq_accuracy){
         case IAQA_NOT_CALIBRATED:      
