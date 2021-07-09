@@ -39,15 +39,13 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "0.9.17"  // major.minor.build
+#define VERSION "0.9.19"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
-#define TRIGGER_PIN 14
 WiFiManager wm;   
 WiFiManagerParameter custom_field; 
 const char* AP_SSID = "Air-Quality";
-  
 
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
 #define LED_PIN   25
@@ -93,14 +91,18 @@ unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 #define property_humidity    0x04
 #define property_dimmlevel   0x05
 #define property_pressure    0x06
+#define property_indicator   0x07
 
 #define actionID_gaugeValue  0x01
 #define actionID_dimmLevel   0x05
+#define actionID_indicator   0x07
 
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 
+#define TRIGGER_PIN 14
+#define WARNING_PIN 13
 
-
+bool warningLedOn = false;
 // +++++++++++++++++++++++ Sensoring +++++++++++++++++++
 
 #define SEALEVELPRESSURE_HPA (1013.25)
@@ -146,6 +148,9 @@ void setup() {
   initializeRandomSeed();
   
   pinMode(TRIGGER_PIN, INPUT);
+  pinMode(WARNING_PIN, OUTPUT);
+
+  setWarningLed(false);
   
   if (!initEEProm()){
     Serial.println("ERROR - Failed to initialize EEPROM");
@@ -229,6 +234,7 @@ void loop() {
     if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
       lastPropertyUpdate = currTime;
       sendGaugeDimmLevelValue();
+      sendWarningLedState();
       if (sensorsAvailable()) {              
         if (readTemperature()){
           sendTemperatureValue();
@@ -381,6 +387,20 @@ void resetToFactorySettings(){
    eraseBsecState();
 }
 
+void setWarningLed(bool state){
+   if (warningLedOn == state){
+    return;
+   }   
+   warningLedOn = state;
+   Serial.print("Turning Warning LED ");
+   if (warningLedOn){
+      Serial.println("ON");
+   } else {
+    Serial.println("OFF");
+   }
+   digitalWrite(WARNING_PIN,warningLedOn);
+   sendWarningLedState();
+}
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    Sensoring
@@ -726,27 +746,52 @@ void initSession() {
 
 
 void sendHumidityValue(){
+  if (!initialized){
+    return;
+  }
   c->sendFloatPropertyUpdate(property_humidity, humidity);
 }
 
 void sendTemperatureValue(){
+  if (!initialized){
+    return;
+  }
    c->sendFloatPropertyUpdate(property_temperature, temperature);
 }
 
 void sendPressureValue(){
+  if (!initialized){
+    return;
+  }
  c->sendFloatPropertyUpdate(property_pressure, pressure);
 }
 
 void sendCo2Value(){
+  if (!initialized){
+    return;
+  }
  c->sendFloatPropertyUpdate(property_co2, co2);
 }
 
 void sendGaugeDimmLevelValue(){
+  if (!initialized){
+    return;
+  }
    c->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
 }
 
 void sendGaugeValue(){
+  if (!initialized){
+    return;
+  }
    c->sendFloatPropertyUpdate(property_gauge, gaugeValue);
+}
+
+void sendWarningLedState(){
+  if (!initialized){
+    return;
+  }
+  c->sendBooleanPropertyUpdate(property_indicator, warningLedOn);
 }
 
 // called whenever an action is invoked
@@ -758,6 +803,9 @@ void onAction(unsigned char actionId, char *value) {
       break;
     case actionID_dimmLevel:
       setGaugeDimmLevel(String(value).toFloat()*100);
+      break;
+    case actionID_indicator:
+      setWarningLed(value[0] == 0x31);
       break;
      default :
         Serial.println("no matching Action found");
