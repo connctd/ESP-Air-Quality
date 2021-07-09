@@ -39,7 +39,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library
 
 
-#define VERSION "0.9.12"
+#define VERSION "0.9.14"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -403,17 +403,11 @@ void eraseBsecState(){
 }
 
 bool loadBsecState(){
+  getBsecState();
   Serial.print("Reading BSEC state from EEPROM .... ");
   bsecStateMemory.get(0,bsecState);  
   Serial.println("OK");
-  
-  
-  Serial.print("BSEC State = ");
-  for (int i = 0; i < BSEC_MAX_STATE_BLOB_SIZE+1; i++){
-    Serial.print(bsecState[i], HEX);
-    Serial.print(" ");
-  }
-  Serial.println();
+  getBsecState();  
   Serial.print("Checking BSEC state ............... ");
   if (!checkBsecState()){
     Serial.println("ERROR");
@@ -422,20 +416,30 @@ bool loadBsecState(){
   }
   Serial.println("OK"); 
   Serial.print("Setting BSEC state ................ ");
-  //iaqSensor.setState(bsecState);
+  iaqSensor.setState(bsecState);  
   Serial.println("OK");
+  getBsecState();
   return true;
 }
 
+void getBsecState(){
+  Serial.print("BSEC State : ");
+  iaqSensor.getState(bsecState);
+  for (int i = 0; i < BSEC_MAX_STATE_BLOB_SIZE+1; i++){
+    Serial.print(bsecState[i], HEX);
+    Serial.print(" ");
+  }
+  Serial.println();
+}
+
 bool saveBsecState(){
+  getBsecState();
   Serial.print("Writing BSEC state to EEPROM .... ");
   if (!checkIaqSensorStatus()){
     Serial.println("ERROR");
     evalIaqSensorStatus();
     return false;
-  }
-  iaqSensor.getState(bsecState);
-  
+  }  
   bsecStateMemory.put(0, bsecState);
   if (bsecStateMemory.commit()) {
      Serial.println("OK");
