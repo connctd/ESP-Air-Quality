@@ -135,6 +135,8 @@ int iaq_accuracy = IAQA_NOT_CALIBRATED;
 
 uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
 EEPROMClass  bsecStateMemory("bsecState", BSEC_MAX_STATE_BLOB_SIZE+1);
+unsigned long bsecStateUpdateInterval = 5*60*1000; // every 5min
+unsigned long lastBsecUpdate=0;
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
@@ -256,7 +258,7 @@ void loop() {
   
   loopCnt++;
   
-  if (loopCnt > 65535){ // when 16bit max have been reached - do not care about 32bit systems
+  if (loopCnt > 65535){ 
     loopCnt = 0;
   }
   c->loop();
@@ -280,10 +282,11 @@ void loop() {
           triggerNotCalibratedAnimation();
         }
      }
-  }        
-
-  
-  
+     if (currTime - lastBsecUpdate > bsecStateUpdateInterval){
+        saveBsecState();
+        lastBsecUpdate = currTime;
+     }
+  }          
   delay(10);
 }
 
