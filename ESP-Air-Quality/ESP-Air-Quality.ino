@@ -36,10 +36,10 @@
 #include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager                     configuration of WiFi settings via Smartphone
 #include <Adafruit_Sensor.h>  // https://github.com/adafruit/Adafruit_Sensor              common library for arduino sensors
 #include <Adafruit_BME280.h>  // https://github.com/adafruit/Adafruit_BME280_Library      library to work with BME280 sensors
-#include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with BME680 sensors and calculating CO2 equivalent
+#include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "0.9.19"  // major.minor.build
+#define VERSION "0.9.21"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -61,29 +61,10 @@ int oldScaleValue  = 1;     // needed for value change animation of gauge
 int gaugeValue     = 0;
 float dimmLevel    = 1.0F;  // value between 0 (off) and 1 (full brightness)
 
-int notCalibratedState = 0;
+int notCalibratedAnimationState            = 0;
 unsigned long lastCalibrationAnimationStep = 0;
 
 // +++++++++++++++++++++++ Connctd +++++++++++++++++++++
-
-IPAddress ip(35,205,82,53);  // TODO: need to be configured as address, ip could change over time
-int port = 5683;
-
-struct DeviceConfig {    
-    char id[DEVICE_ID_SIZE];    
-    unsigned char key[CHACHA_KEY_SIZE];
-};
-
-DeviceConfig deviceConfig;
-EEPROMClass  deviceConfigMemory("devConfig", 128);
-
-MarconiClient *c;
-bool initialized = false;
-unsigned long resubscribeInterval = 60000; // in ms
-unsigned long propertyUpdateInterval = 30000; // in ms
-unsigned long lastResubscribe = 0; // periodically resubscribe
-unsigned long lastInitTry = 0;
-unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 
 #define property_gauge       0x01
 #define property_co2         0x02
@@ -97,38 +78,60 @@ unsigned long lastPropertyUpdate = 0; // time when property updates were sent
 #define actionID_dimmLevel   0x05
 #define actionID_indicator   0x07
 
+IPAddress ip(35,205,82,53);  // TODO: need to be configured as address, ip could change over time
+int port = 5683;
+
+struct DeviceConfig {    
+    char id[DEVICE_ID_SIZE];    
+    unsigned char key[CHACHA_KEY_SIZE];
+};
+
+DeviceConfig deviceConfig;
+EEPROMClass  deviceConfigMemory("devConfig", 128);
+
+MarconiClient *c;
+bool marconiInitialized = false;
+unsigned long resubscribeInterval    = 60000; // in ms
+unsigned long propertyUpdateInterval = 30000; // in ms
+unsigned long lastResubscribe        = 0; // periodically resubscribe
+unsigned long lastInitTry            = 0;
+unsigned long lastPropertyUpdate     = 0; // time when property updates were sent
+
+
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 
 #define TRIGGER_PIN 14
 #define WARNING_PIN 13
 
 bool warningLedOn = false;
+
 // +++++++++++++++++++++++ Sensoring +++++++++++++++++++
-
-#define SEALEVELPRESSURE_HPA (1013.25)
-
-Adafruit_BME280 bme280; 
-bool buttonPressed = false;
-unsigned long buttonPressMillis = 0;
-
-float temperature = 0.0;
-float humidity = 0.0;
-float pressure = 0.0;
-float voc = 0.0;
-int co2 = 0;
-
-bool bme280_available = false;
-bool bme680_available = false;
-
-Bsec iaqSensor;
 #define IAQA_NOT_CALIBRATED       0
 #define IAQA_UNCERTAIN            1
 #define IAQA_CALIBRATING          2
 #define IAQA_CALIBRATION_COMPLETE 3
+
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+
+bool buttonPressed = false;
+unsigned long buttonPressMillis = 0;
+
+float temperature = 0.0;
+float humidity    = 0.0;
+float pressure    = 0.0;
+int co2           = 0;
+
+bool bme280_available = false;
+bool bme680_available = false;
+
+Adafruit_BME280 bme280; 
+Bsec iaqSensor;
 int iaq_accuracy = IAQA_NOT_CALIBRATED;
 uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
 EEPROMClass  bsecStateMemory("bsecState", BSEC_MAX_STATE_BLOB_SIZE+1);
-unsigned long bsecStateUpdateInterval = 5*60*1000; // every 5min
+bool periodicallyBsecSave = false; // periodically save the bsec state to EEPROM? will be addionally saved whenever bsec_accuracy switches to 1 or 3; 
+unsigned long bsecStateUpdateInterval = 60*60*1000; // every 60min
 unsigned long lastBsecUpdate=0;
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -136,7 +139,7 @@ unsigned long lastBsecUpdate=0;
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 void setup() {  
-  initialized = false;
+  marconiInitialized = false;
   
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
@@ -182,7 +185,7 @@ void setup() {
      noSensorAnimation();
   }  
   clearRing();
-
+  
 }
 
 void initializeRandomSeed(){
@@ -216,7 +219,7 @@ void loop() {
   unsigned long currTime = millis();
   checkButton(); // check wether trigger button was pressed  
   // init connection to connctd backend when necessary
-  if (!initialized) {
+  if (!marconiInitialized) {
       if (currTime - lastInitTry > 10000){
         lastInitTry = currTime;
         initSession();            
@@ -224,7 +227,7 @@ void loop() {
   }  
 
   // if connection to connctd is estblished
-  if (initialized){ 
+  if (marconiInitialized){ 
     // resubscribe if necessary
     if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
       lastResubscribe = currTime;
@@ -256,11 +259,11 @@ void loop() {
   
   // BME680/BSEC stuff
   if (bme680_available){         
-     // periodically save BSEC-State
-     // TODO, this is for debugging reasons, need to be adjusted later, depending on the outcome of testing phase
-     if (currTime - lastBsecUpdate > bsecStateUpdateInterval){
-        saveBsecState();
-        lastBsecUpdate = currTime;
+     if (periodicallyBsecSave) {     
+        if (currTime - lastBsecUpdate > bsecStateUpdateInterval){
+          saveBsecState();
+          lastBsecUpdate = currTime;
+        }
      }
      // periodicaly trigger iaqSensor
      if (iaqSensor.run()) {
@@ -276,8 +279,8 @@ void loop() {
            }
         }
      }
-     // trigger animation when sensor is calibrating
-     if (!isIaqCalibrated()){
+     // trigger animation when sensor is calibrating, do not animate when button is pressed
+     if ((!isIaqCalibrated()) && (!buttonPressed)){        
         if (currTime - lastCalibrationAnimationStep > animationSpeed){        
           triggerNotCalibratedAnimation();
           lastCalibrationAnimationStep = currTime;
@@ -323,63 +326,6 @@ bool loadDeviceConfig(){
   return ((deviceConfig.id[0] != 0xFF) && (deviceConfig.id[0] != 0)) ; 
 }
 
-void checkButton(){  
-  
-  if(isButtonPressed()){     
-      if (!buttonPressed){ 
-        onButtonPressed();
-      } 
-  }    
-
-  if (buttonPressed) {
-    if (!isButtonPressed()){
-        onButtonReleased();
-        return;
-    }    
-    long pressedMillis = millis() - buttonPressMillis;
-    if(pressedMillis >= 15000){
-      errorRing();
-      resetToFactorySettings();
-      ESP.restart();
-      return;
-    }
-    if(pressedMillis >= 10000){
-      setRingColor(CRGB(255,0,0));
-      return; 
-    }
-    if (pressedMillis >= 5000){
-      setRingColor(CRGB(0,255,0));
-    }
-  }
-}
-
-
-void onButtonPressed(){
-   Serial.println("Button pressed");
-   buttonPressed = true;
-   buttonPressMillis = millis();         
-}
-
-void onButtonReleased(){
-   long pressedMillis = millis() - buttonPressMillis;
- 
-   buttonPressed = false;
-  
-   Serial.print("Button released (");
-   Serial.print(pressedMillis);
-   Serial.println("ms)");  
-
-   if (pressedMillis <= 1500) {   
-      triggerGaugeDimmLevel();
-      return;
-   }
-   if ((pressedMillis >= 5000) && (pressedMillis < 10000)){
-        startWiFiConfiguration(120);       
-   }
-   clearRing();
-   refreshGauge();
-}
-
 void resetToFactorySettings(){   
    Serial.println("!!!!!!!!!!!!  Performing Factory Reset  !!!!!!!!!!!!!");
    Serial.println("Deleting Wifi Settings");
@@ -397,6 +343,9 @@ void setWarningLed(bool state){
       Serial.println("ON");
    } else {
     Serial.println("OFF");
+   }
+   if (warningLedOn){
+      blinkWarningLed();
    }
    digitalWrite(WARNING_PIN,warningLedOn);
    sendWarningLedState();
@@ -725,6 +674,65 @@ bool readCo2Equivalent(){
 
 // +++++++++++++++++++++++++++++++++++ Button +++++++++++++++++++++++++++++++++++
 
+
+void checkButton(){  
+  
+  if(isButtonPressed()){     
+      if (!buttonPressed){ 
+        onButtonPressed();
+      } 
+  }    
+
+  if (buttonPressed) {
+    if (!isButtonPressed()){
+        onButtonReleased();
+        return;
+    }    
+    long pressedMillis = millis() - buttonPressMillis;
+    if(pressedMillis >= 15000){
+      errorRing();
+      resetToFactorySettings();
+      ESP.restart();
+      return;
+    }
+    if(pressedMillis >= 10000){
+      setRingColor(CRGB(255,0,0));
+      return; 
+    }
+    if (pressedMillis >= 5000){
+      setRingColor(CRGB(0,255,0));
+    }
+  }
+}
+
+
+void onButtonPressed(){
+   Serial.println("Button pressed");
+   buttonPressed = true;
+   buttonPressMillis = millis();         
+}
+
+void onButtonReleased(){
+   long pressedMillis = millis() - buttonPressMillis;
+ 
+   buttonPressed = false;
+  
+   Serial.print("Button released (");
+   Serial.print(pressedMillis);
+   Serial.println("ms)");  
+
+   if (pressedMillis <= 1500) {   
+      triggerGaugeDimmLevel();
+      return;
+   }
+   if ((pressedMillis >= 5000) && (pressedMillis < 10000)){
+        startWiFiConfiguration(120);       
+   }
+   clearRing();
+   refreshGauge();
+}
+
+
 bool isButtonPressed(){
   return  digitalRead(TRIGGER_PIN) == LOW ;
 }
@@ -737,7 +745,7 @@ bool isButtonPressed(){
 // requestes a session id from connector which will be exchanged in every
 // message to prevent replay attacks. Can be called multiple times
 void initSession() {  
-  if (initialized) {
+  if (marconiInitialized) {
     return;
   }
   Serial.println("Initializing session");    
@@ -746,49 +754,49 @@ void initSession() {
 
 
 void sendHumidityValue(){
-  if (!initialized){
+  if (!marconiInitialized){
     return;
   }
   c->sendFloatPropertyUpdate(property_humidity, humidity);
 }
 
 void sendTemperatureValue(){
-  if (!initialized){
+  if (!marconiInitialized){
     return;
   }
    c->sendFloatPropertyUpdate(property_temperature, temperature);
 }
 
 void sendPressureValue(){
-  if (!initialized){
+  if (!marconiInitialized){
     return;
   }
  c->sendFloatPropertyUpdate(property_pressure, pressure);
 }
 
 void sendCo2Value(){
-  if (!initialized){
+  if (!marconiInitialized){
     return;
   }
  c->sendFloatPropertyUpdate(property_co2, co2);
 }
 
 void sendGaugeDimmLevelValue(){
-  if (!initialized){
+  if (!marconiInitialized){
     return;
   }
    c->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
 }
 
 void sendGaugeValue(){
-  if (!initialized){
+  if (!marconiInitialized){
     return;
   }
    c->sendFloatPropertyUpdate(property_gauge, gaugeValue);
 }
 
 void sendWarningLedState(){
-  if (!initialized){
+  if (!marconiInitialized){
     return;
   }
   c->sendBooleanPropertyUpdate(property_indicator, warningLedOn);
@@ -823,16 +831,16 @@ void onConnectionStateChange(const unsigned char state) {
     Serial.printf("[CON] ");
     switch (state) {
       case kConnectionStateInitialized:
-        Serial.println("Session was initialized");
-        initialized = true;
+        Serial.println("Session was Initialized");
+        marconiInitialized = true;
         break;
       case kConnectionStateUninitialized:
         Serial.println("Session initialization ongoing");
-        initialized = false;
+        marconiInitialized = false;
         break;
       case kConnectionStateInitRejected:
         Serial.println("Session initialization has failed");
-        initialized = false;
+        marconiInitialized = false;
         errorRing();
         break;
       case kConnectionObservationRequested:
@@ -845,7 +853,7 @@ void onConnectionStateChange(const unsigned char state) {
         Serial.println("Observation was rejected");
 
         // reinit session in case connector was restarted
-        initialized = false;
+        marconiInitialized = false;
 
         // after reinit we want to resubscribe
         lastResubscribe = 0;
@@ -1007,14 +1015,14 @@ int getScaleValue(int value){
 
 void triggerNotCalibratedAnimation(){ 
   clearRing();
-  notCalibratedState++;
-  if (notCalibratedState > NUMPIXELS) {
-    notCalibratedState = -1 * (NUMPIXELS-1);
+  notCalibratedAnimationState++;
+  if (notCalibratedAnimationState > NUMPIXELS) {
+    notCalibratedAnimationState = -1 * (NUMPIXELS-1);
   }
-  if (notCalibratedState > 0) {
-    leds[notCalibratedState] = CRGB(255,255,255);
+  if (notCalibratedAnimationState > 0) {
+    leds[notCalibratedAnimationState] = CRGB(255,255,255);
   } else {
-    leds[(-1)*notCalibratedState] = CRGB(255,255,255);
+    leds[(-1)*notCalibratedAnimationState] = CRGB(255,255,255);
   }
   FastLED.show();  
 }
@@ -1101,4 +1109,13 @@ void successGauge(){
       delay(150);
       clearRing();
     }
+}
+
+void blinkWarningLed(){
+  for (int i = 0; i< 5; i++){    
+    digitalWrite(WARNING_PIN,true);
+    delay(100);
+    digitalWrite(WARNING_PIN,false);
+    delay(100);
+  }
 }
