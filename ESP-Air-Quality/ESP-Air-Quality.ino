@@ -39,7 +39,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "0.9.21"  // major.minor.build
+#define VERSION "0.9.22"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -149,11 +149,10 @@ void setup() {
   Wire.begin();
   initializeLedRing();    
   initializeRandomSeed();
-  
-  pinMode(TRIGGER_PIN, INPUT);
-  pinMode(WARNING_PIN, OUTPUT);
+  initWarningLed();
+  initTriggerButton();
 
-  setWarningLed(false);
+  
   
   if (!initEEProm()){
     Serial.println("ERROR - Failed to initialize EEPROM");
@@ -177,15 +176,27 @@ void setup() {
   }
 
   initMarconi();
-  
+  initSensors();
+ 
+  clearRing();  
+}
+
+void initSensors(){
   bme680_available = initBME680();
   bme280_available = initBME280();   
 
   if (!sensorsAvailable()){
      noSensorAnimation();
   }  
-  clearRing();
-  
+}
+
+void initWarningLed(){
+  pinMode(WARNING_PIN, OUTPUT);
+  digitalWrite(WARNING_PIN,false);
+}
+
+void initTriggerButton(){
+    pinMode(TRIGGER_PIN, INPUT);
 }
 
 void initializeRandomSeed(){
@@ -201,7 +212,9 @@ void initializeLedRing(){
 }
 
 void initMarconi(){
-  Serial.println("initialize Marconi Library");  
+  Serial.println("initialize Marconi Library"); 
+
+  // TODO: get IP address out of URL   
   c = new MarconiClient(ip, port, deviceConfig.id, deviceConfig.key, onConnectionStateChange, onDebug, onErr);
 }
 
