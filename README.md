@@ -1,6 +1,10 @@
 # ESP-Air-Quality
 
-# Dependencies
+# Runtime Behavior
+
+
+
+# Dependencies 
 
 ## Board Management
 
@@ -24,13 +28,11 @@ Open the Board Management and search for ```esp32```. Choose the version ```1.0.
 
 ## Error Color Codes
 
-Errors could be identified by a red blinking LED Ring. Either the complete ring is blinking in red, or the gauge only (half of the ring). Before the blinking starts, a color idicates the error type.
-
-
+Whenever an error occurs that was identified by the program, the LED ring will blink 3 times in red color. Either the complete ring is blinking, or the gauge only (half of the ring). Before the ring starts blinking, a solid colored ring for is representig the error type.
 
 ### Complete Ring
 
-In general, a complete red blinking LED-ring idicates connection or system problems. 
+In general, a complete red blinking LED-ring idicates connection or general system errors. The following color code might give further details on the error type. 
 
 | color    | error            |
 |:-------- |:-------------------|
