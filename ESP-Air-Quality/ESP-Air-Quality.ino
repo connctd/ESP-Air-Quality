@@ -78,7 +78,9 @@ unsigned long lastCalibrationAnimationStep = 0;
 #define actionID_dimmLevel   0x05
 #define actionID_indicator   0x07
 
-IPAddress ip(35,205,82,53);  // TODO: need to be configured as address, ip could change over time
+const char* marconiUrl = "marconi-udp.connectors.connctd.iox";
+IPAddress marconiIp;
+
 int port = 5683;
 
 struct DeviceConfig {    
@@ -90,12 +92,16 @@ DeviceConfig deviceConfig;
 EEPROMClass  deviceConfigMemory("devConfig", 128);
 
 MarconiClient *c;
-bool marconiInitialized = false;
-unsigned long resubscribeInterval    = 60000; // in ms
-unsigned long propertyUpdateInterval = 30000; // in ms
-unsigned long lastResubscribe        = 0; // periodically resubscribe
-unsigned long lastInitTry            = 0;
-unsigned long lastPropertyUpdate     = 0; // time when property updates were sent
+bool marconiSessionInitialized = false;
+bool marconiClientInitialized = false;
+unsigned long resubscribeInterval       = 60000; // in ms
+unsigned long propertyUpdateInterval    = 30000; // in ms
+unsigned long lastResubscribe           = 0; // periodically resubscribe
+unsigned long lastInitTry               = 0;
+unsigned long lastPropertyUpdate        = 0; // time when property updates were sent
+unsigned long lastMarconiClientInitTry  = 0;
+unsigned long intervalMarconiClientInit = 20000;
+int marconiInitTryCnt                   = 0;
 
 
 // +++++++++++++++++++++++ General +++++++++++++++++++++
@@ -139,7 +145,8 @@ unsigned long lastBsecUpdate=0;
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 void setup() {  
-  marconiInitialized = false;
+  marconiSessionInitialized = false;
+  marconiClientInitialized = false;
   
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
@@ -174,8 +181,8 @@ void setup() {
   if (!connectToWiFi()){    
     ESP.restart();
   }
-
-  initMarconi();
+ 
+  marconiClientInitialized = initMarconi();
   initSensors();
  
   clearRing();  
@@ -211,11 +218,17 @@ void initializeLedRing(){
   
 }
 
-void initMarconi(){
+bool initMarconi(){
   Serial.println("initialize Marconi Library"); 
-
-  // TODO: get IP address out of URL   
-  c = new MarconiClient(ip, port, deviceConfig.id, deviceConfig.key, onConnectionStateChange, onDebug, onErr);
+  marconiInitTryCnt++;
+  lastMarconiClientInitTry = millis();
+  if (!resolveMarconiIp()){
+    Serial.println("ERROR, unable to initialize Marconi library");
+    return false;
+  }
+  c = new MarconiClient(marconiIp, port, deviceConfig.id, deviceConfig.key, onConnectionStateChange, onDebug, onErr);
+  marconiInitTryCnt = 0;
+  return true;
 }
 
 bool initEEProm(){
@@ -228,48 +241,68 @@ bool initEEProm(){
 //                                    THE LOOP 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-void loop() {  
-  unsigned long currTime = millis();
-  checkButton(); // check wether trigger button was pressed  
-  // init connection to connctd backend when necessary
-  if (!marconiInitialized) {
+void loop() {    
+  checkButton(); // check wether trigger button was pressed    
+
+  doMarconiStuff(millis());  
+  doSensorStuff(millis());
+  
+  // and wait for 10ms
+  delay(10);
+}
+
+void doMarconiStuff(unsigned long currTime){
+  
+   // check if client is initialized
+   if (!marconiClientInitialized){
+     
+      if (currTime - lastMarconiClientInitTry > intervalMarconiClientInit){
+        if (!initMarconi() && (marconiInitTryCnt >= 3)){         
+         errorRing();          
+        }
+      }
+      return;
+   }
+   
+   c->loop(); 
+   
+   if (!marconiSessionInitialized) {
       if (currTime - lastInitTry > 10000){
         lastInitTry = currTime;
         initSession();            
       }
+      return;
   }  
 
-  // if connection to connctd is estblished
-  if (marconiInitialized){ 
-    // resubscribe if necessary
-    if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
+   if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
       lastResubscribe = currTime;
       c->subscribeForActions(onAction);
-    }    
-    // periodically send property updates
-    if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
+   }    
+   
+   // periodically send property updates
+   if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
       lastPropertyUpdate = currTime;
       sendGaugeDimmLevelValue();
       sendWarningLedState();
       if (sensorsAvailable()) {              
         if (readTemperature()){
-          sendTemperatureValue();
+           sendTemperatureValue();
         }
         if (readHumidity()){
-          sendHumidityValue();
+           sendHumidityValue();
         }
         if (readPressure()){
-          sendPressureValue();
+           sendPressureValue();
         }
         if (readCo2Equivalent()){
-          sendCo2Value();
+           sendCo2Value();
         }
-       
-      }      
-    }
-    
-  }
+      }
+    }     
   
+}
+
+void doSensorStuff(unsigned long currTime){  
   // BME680/BSEC stuff
   if (bme680_available){         
      if (periodicallyBsecSave) {     
@@ -301,13 +334,7 @@ void loop() {
      }
      
   }      
-
-  // ok, trigger marconi library 
-  c->loop();
-  // and wait for 10ms
-  delay(10);
 }
-
 
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -758,7 +785,7 @@ bool isButtonPressed(){
 // requestes a session id from connector which will be exchanged in every
 // message to prevent replay attacks. Can be called multiple times
 void initSession() {  
-  if (marconiInitialized) {
+  if (marconiSessionInitialized) {
     return;
   }
   Serial.println("Initializing session");    
@@ -767,49 +794,49 @@ void initSession() {
 
 
 void sendHumidityValue(){
-  if (!marconiInitialized){
+  if (!marconiSessionInitialized){
     return;
   }
   c->sendFloatPropertyUpdate(property_humidity, humidity);
 }
 
 void sendTemperatureValue(){
-  if (!marconiInitialized){
+  if (!marconiSessionInitialized){
     return;
   }
    c->sendFloatPropertyUpdate(property_temperature, temperature);
 }
 
 void sendPressureValue(){
-  if (!marconiInitialized){
+  if (!marconiSessionInitialized){
     return;
   }
  c->sendFloatPropertyUpdate(property_pressure, pressure);
 }
 
 void sendCo2Value(){
-  if (!marconiInitialized){
+  if (!marconiSessionInitialized){
     return;
   }
  c->sendFloatPropertyUpdate(property_co2, co2);
 }
 
 void sendGaugeDimmLevelValue(){
-  if (!marconiInitialized){
+  if (!marconiSessionInitialized){
     return;
   }
    c->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
 }
 
 void sendGaugeValue(){
-  if (!marconiInitialized){
+  if (!marconiSessionInitialized){
     return;
   }
    c->sendFloatPropertyUpdate(property_gauge, gaugeValue);
 }
 
 void sendWarningLedState(){
-  if (!marconiInitialized){
+  if (!marconiSessionInitialized){
     return;
   }
   c->sendBooleanPropertyUpdate(property_indicator, warningLedOn);
@@ -845,15 +872,15 @@ void onConnectionStateChange(const unsigned char state) {
     switch (state) {
       case kConnectionStateInitialized:
         Serial.println("Session was Initialized");
-        marconiInitialized = true;
+        marconiSessionInitialized = true;
         break;
       case kConnectionStateUninitialized:
         Serial.println("Session initialization ongoing");
-        marconiInitialized = false;
+        marconiSessionInitialized = false;
         break;
       case kConnectionStateInitRejected:
         Serial.println("Session initialization has failed");
-        marconiInitialized = false;
+        marconiSessionInitialized = false;
         errorRing();
         break;
       case kConnectionObservationRequested:
@@ -866,7 +893,7 @@ void onConnectionStateChange(const unsigned char state) {
         Serial.println("Observation was rejected");
 
         // reinit session in case connector was restarted
-        marconiInitialized = false;
+        marconiSessionInitialized = false;
 
         // after reinit we want to resubscribe
         lastResubscribe = 0;
@@ -902,6 +929,20 @@ void onErr(const unsigned char error) {
             break;
     }
 }
+
+bool resolveMarconiIp(){
+  Serial.print("Resolving IP address for ");
+  Serial.print(marconiUrl);
+  Serial.print("  ...  ");  
+  if (!WiFi.hostByName(marconiUrl, marconiIp) == 1) { 
+      Serial.println("ERROR");
+      Serial.println("unable to resolve marconiUrl");
+      return false;
+  }
+  Serial.println("OK");
+  Serial.printf("Marconi-UDP IP Address : %d.%d.%d.%d\n", marconiIp[0], marconiIp[1], marconiIp[2], marconiIp[3]);  
+  return true;
+}
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    WiFi Manager
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -925,7 +966,7 @@ bool connectToWiFi(){
   } else {
     //if you get here you have connected to the WiFi    
     Serial.print("connected to ");
-    Serial.println(wm.getWiFiSSID());
+    Serial.println(wm.getWiFiSSID());   
     successRing();
   }
   return res;
