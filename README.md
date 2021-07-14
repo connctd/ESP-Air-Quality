@@ -22,6 +22,37 @@ Open the Board Management and search for ```esp32```. Choose the version ```1.0.
 
 # Error Handling
 
+## Error Color Codes
+
+Errors could be identified by a red blinking LED Ring. Either the complete ring is blinking in red, or the gauge only (half of the ring). Before the blinking starts, a color idicates the error type.
+
+
+
+### Complete Ring
+
+In general, a complete red blinking LED-ring idicates connection or system problems. 
+
+| color    | error            |
+|:-------- |:-------------------|
+| white    | Error not further specified |
+| blue     | Error has to do with Wifi Connection|
+| orange   | Maroni Client could not be initialized. IP address could not resolved from URL or kind like that. |
+| violette | Marconi Session could not be establihed |
+| red      | EEPROM failure |
+
+
+### Gauge Only
+In contrast to complete red blinking LED-rings, a half blinking LED ring indicates Errors related to the connected Sensors.
+
+
+| color    | error            |
+|:-------- |:-------------------|
+| white    | Error not further specified |
+| yellow   | ERROR BME280 |
+| orange   | Error BME680 |
+| violette | Error BSEC library |
+
+
 ## ESP compiler error
 
 For MacOS, go to folder ```~/Library/Arduino15/packages/esp32/hardware/esp32/1.0.6``` and open ```platform.txt```. Search for line

@@ -39,7 +39,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "0.9.22"  // major.minor.build
+#define VERSION "0.9.23"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -78,7 +78,7 @@ unsigned long lastCalibrationAnimationStep = 0;
 #define actionID_dimmLevel   0x05
 #define actionID_indicator   0x07
 
-const char* marconiUrl = "marconi-udp.connectors.connctd.iox";
+const char* marconiUrl = "marconi-udp.connectors.connctd.io";
 IPAddress marconiIp;
 
 int port = 5683;
@@ -91,7 +91,7 @@ struct DeviceConfig {
 DeviceConfig deviceConfig;
 EEPROMClass  deviceConfigMemory("devConfig", 128);
 
-MarconiClient *c;
+MarconiClient *marconiClient;
 bool marconiSessionInitialized = false;
 bool marconiClientInitialized = false;
 unsigned long resubscribeInterval       = 60000; // in ms
@@ -109,6 +109,18 @@ int marconiInitTryCnt                   = 0;
 #define TRIGGER_PIN 14
 #define WARNING_PIN 13
 
+#define ERR_GENERAL            0x00
+#define ERR_NO_WIFI            0x01
+#define ERR_NO_MARCONI_CLIENT  0x02
+#define ERR_NO_MARCONI_INIT    0x03
+#define ERR_EEPROM             0x04
+#define ERR_NOT_FLASHED        0x05
+#define ERR_BME680             0xF1
+#define ERR_BSEC               0xF2
+#define ERR_BME280             0xF3
+
+
+       
 bool warningLedOn = false;
 
 // +++++++++++++++++++++++ Sensoring +++++++++++++++++++
@@ -154,30 +166,27 @@ void setup() {
   Serial.print("Air Quality - ESP v");
   Serial.println(VERSION);
   Wire.begin();
-  initializeLedRing();    
+  initializeLedRing();   
   initializeRandomSeed();
   initWarningLed();
   initTriggerButton();
-
-  
-  
+ 
   if (!initEEProm()){
     Serial.println("ERROR - Failed to initialize EEPROM");
     Serial.println("ESP will be restarted");
-    errorRing();
+    errorRing(ERR_EEPROM);
     ESP.restart();
   }
 
   if (!loadDeviceConfig()){
     Serial.println("ERROR - Device was not flashed with Device ID and KEY!!!");
     while(true){
-      errorRing();
+      errorRing(ERR_NOT_FLASHED);
     }
   }
      
   initializeWiFi(); 
-  
-  // ToDo - make non blocking and animate "connecting gauge"
+
   if (!connectToWiFi()){    
     ESP.restart();
   }
@@ -214,8 +223,7 @@ void initializeRandomSeed(){
 void initializeLedRing(){
    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, ALLPIXELS).setCorrection( TypicalLEDStrip );
    FastLED.setBrightness(255);  
-  clearRing();  
-  
+  clearRing();    
 }
 
 bool initMarconi(){
@@ -226,7 +234,7 @@ bool initMarconi(){
     Serial.println("ERROR, unable to initialize Marconi library");
     return false;
   }
-  c = new MarconiClient(marconiIp, port, deviceConfig.id, deviceConfig.key, onConnectionStateChange, onDebug, onErr);
+  marconiClient = new MarconiClient(marconiIp, port, deviceConfig.id, deviceConfig.key, onConnectionStateChange, onDebug, onErr);
   marconiInitTryCnt = 0;
   return true;
 }
@@ -257,26 +265,29 @@ void doMarconiStuff(unsigned long currTime){
    if (!marconiClientInitialized){
      
       if (currTime - lastMarconiClientInitTry > intervalMarconiClientInit){
-        if (!initMarconi() && (marconiInitTryCnt >= 3)){         
-         errorRing();          
+        if (!initMarconi() && (marconiInitTryCnt >= 3)){              
+          errorRing(ERR_NO_MARCONI_CLIENT);              
         }
       }
       return;
    }
    
-   c->loop(); 
+   marconiClient->loop(); 
    
    if (!marconiSessionInitialized) {
       if (currTime - lastInitTry > 10000){
         lastInitTry = currTime;
-        initSession();            
+        initMarconiSession();        
+        if (marconiInitTryCnt >= 3){          
+          errorRing(ERR_NO_MARCONI_INIT);
+        }
       }
       return;
   }  
 
    if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
       lastResubscribe = currTime;
-      c->subscribeForActions(onAction);
+      marconiClient->subscribeForActions(onAction);
    }    
    
    // periodically send property updates
@@ -321,7 +332,7 @@ void doSensorStuff(unsigned long currTime){
         // need to check the status for this.   
         if (!checkIaqSensorStatus()){
            while(true){
-             errorGauge();
+             errorGauge(ERR_BSEC);
            }
         }
      }
@@ -348,20 +359,18 @@ bool loadDeviceConfig(){
    deviceConfigMemory.get(0,deviceConfig);      
    Serial.print("Device ID = ");
    Serial.println(deviceConfig.id);    
-    Serial.println(" -- id --");
+    Serial.print("Device ID: ");
    for (int i = 0; i < DEVICE_ID_SIZE; i++){
       Serial.print( deviceConfig.id[i],HEX);
       Serial.print(" ");
    }
    Serial.println();
-   Serial.println(" ---------");     
-   Serial.println(" -- key --");
-   for (int i = 0; i < CHACHA_KEY_SIZE; i++){
+   Serial.print("last 5 bytes of Device Key: ");
+   for (int i = CHACHA_KEY_SIZE-5; i < CHACHA_KEY_SIZE; i++){
       Serial.print( deviceConfig.key[i],HEX);
       Serial.print(" ");
    }
    Serial.println();
-   Serial.println(" ---------");
 
   return ((deviceConfig.id[0] != 0xFF) && (deviceConfig.id[0] != 0)) ; 
 }
@@ -730,7 +739,7 @@ void checkButton(){
     }    
     long pressedMillis = millis() - buttonPressMillis;
     if(pressedMillis >= 15000){
-      errorRing();
+      
       resetToFactorySettings();
       ESP.restart();
       return;
@@ -784,12 +793,13 @@ bool isButtonPressed(){
 
 // requestes a session id from connector which will be exchanged in every
 // message to prevent replay attacks. Can be called multiple times
-void initSession() {  
+void initMarconiSession() {  
   if (marconiSessionInitialized) {
     return;
   }
   Serial.println("Initializing session");    
-  c->init();
+  marconiInitTryCnt++;
+  marconiClient->init();
 }
 
 
@@ -797,49 +807,49 @@ void sendHumidityValue(){
   if (!marconiSessionInitialized){
     return;
   }
-  c->sendFloatPropertyUpdate(property_humidity, humidity);
+  marconiClient->sendFloatPropertyUpdate(property_humidity, humidity);
 }
 
 void sendTemperatureValue(){
   if (!marconiSessionInitialized){
     return;
   }
-   c->sendFloatPropertyUpdate(property_temperature, temperature);
+   marconiClient->sendFloatPropertyUpdate(property_temperature, temperature);
 }
 
 void sendPressureValue(){
   if (!marconiSessionInitialized){
     return;
   }
- c->sendFloatPropertyUpdate(property_pressure, pressure);
+ marconiClient->sendFloatPropertyUpdate(property_pressure, pressure);
 }
 
 void sendCo2Value(){
   if (!marconiSessionInitialized){
     return;
   }
- c->sendFloatPropertyUpdate(property_co2, co2);
+ marconiClient->sendFloatPropertyUpdate(property_co2, co2);
 }
 
 void sendGaugeDimmLevelValue(){
   if (!marconiSessionInitialized){
     return;
   }
-   c->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
+   marconiClient->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
 }
 
 void sendGaugeValue(){
   if (!marconiSessionInitialized){
     return;
   }
-   c->sendFloatPropertyUpdate(property_gauge, gaugeValue);
+   marconiClient->sendFloatPropertyUpdate(property_gauge, gaugeValue);
 }
 
 void sendWarningLedState(){
   if (!marconiSessionInitialized){
     return;
   }
-  c->sendBooleanPropertyUpdate(property_indicator, warningLedOn);
+  marconiClient->sendBooleanPropertyUpdate(property_indicator, warningLedOn);
 }
 
 // called whenever an action is invoked
@@ -873,6 +883,7 @@ void onConnectionStateChange(const unsigned char state) {
       case kConnectionStateInitialized:
         Serial.println("Session was Initialized");
         marconiSessionInitialized = true;
+        marconiInitTryCnt = 0;
         break;
       case kConnectionStateUninitialized:
         Serial.println("Session initialization ongoing");
@@ -880,8 +891,7 @@ void onConnectionStateChange(const unsigned char state) {
         break;
       case kConnectionStateInitRejected:
         Serial.println("Session initialization has failed");
-        marconiSessionInitialized = false;
-        errorRing();
+        marconiSessionInitialized = false;        
         break;
       case kConnectionObservationRequested:
         Serial.println("Observation was requested");
@@ -897,7 +907,6 @@ void onConnectionStateChange(const unsigned char state) {
 
         // after reinit we want to resubscribe
         lastResubscribe = 0;
-        errorRing();
         break;
       default:
         Serial.printf("Unknown connection event %x\n", state);
@@ -962,7 +971,7 @@ bool connectToWiFi(){
   res = wm.autoConnect(AP_SSID,NULL); 
   if(!res) {
     Serial.println("Failed to connect or hit timeout");
-    errorRing();  
+    //errorRing();  
   } else {
     //if you get here you have connected to the WiFi    
     Serial.print("connected to ");
@@ -979,7 +988,7 @@ void startWiFiConfiguration(int timeout){
   wm.setConfigPortalTimeout(timeout);     
   if (!wm.startConfigPortal(AP_SSID,NULL)) {
      Serial.println("ERROR - failed to connect or hit timeout");          
-      errorRing();                 
+      //errorRing();                 
   }      
 }
 
@@ -1129,40 +1138,74 @@ void setGaugeColor(const CRGB color){
 }
 
 
-void errorRing(){
-  for (int i = 0; i<3; i++){    
-    delay(150);
-    setRingColor(CRGB(255,0,0));
-    delay(150);
-    clearRing();
-  }  
+void errorRing(int error_id){
+  switch (error_id){
+    case ERR_NO_WIFI:
+       setRingColor(CRGB(0,0,255));   // blue
+       break;
+    case ERR_NO_MARCONI_CLIENT:
+       setRingColor(CRGB(255,165,0)); // orange 
+       break;
+    case ERR_NO_MARCONI_INIT:
+        setRingColor(CRGB(200,1,175));  // violette 
+       break;
+    case ERR_GENERAL:
+       setRingColor(CRGB(255,255,255));  // white
+       break;
+    case ERR_EEPROM:       
+       setRingColor(CRGB(255,0,0));  // red
+       break;
+    case ERR_NOT_FLASHED:
+       setRingColor(CRGB(255,0,0));  // red
+       break;      
+  }
+  delay(1000);  
+  blinkRing(CRGB(255,0,0));
 }
 
-void errorGauge(){
-  for (int i = 0; i<3; i++){    
-    delay(150);
-    setGaugeColor(CRGB(255,0,0));
-    delay(150);
-    clearRing();
+void errorGauge(int error_id){
+   switch (error_id){
+    case ERR_BME680:
+       setGaugeColor(CRGB(255,165,0));   // orange 
+       break;
+    case ERR_BSEC:
+        setGaugeColor(CRGB(200,1,175));  // violette 
+       break;
+    case ERR_GENERAL:
+       setGaugeColor(CRGB(255,255,255)); // white
+       break;
+    case ERR_BME280:
+       setRingColor(CRGB(255,255,0));      // yellow
+       break;        
   }
+  delay(1000);
+  blinkGauge(CRGB(255,0,0));  
+}
+
+void blinkRing(CRGB color){
+  for (int i = 0; i< 3; i++){
+      delay(150);    
+      setRingColor(color);
+      delay(150);
+      clearRing();
+    }
+}
+
+void blinkGauge(CRGB color){
+  for (int i = 0; i< 3; i++){
+      delay(150);    
+      setGaugeColor(color);
+      delay(150);
+      clearRing();
+    }
 }
 
 void successRing(){
-  for (int i = 0; i< 3; i++){
-      delay(150);    
-      setRingColor(CRGB(0,255,0));
-      delay(150);
-      clearRing();
-    }
+  blinkRing(CRGB(0,255,0));      
 }
 
 void successGauge(){
-  for (int i = 0; i< 3; i++){
-      delay(150);    
-      setGaugeColor(CRGB(0,255,0));
-      delay(150);
-      clearRing();
-    }
+  blinkGauge(CRGB(0,255,0));      
 }
 
 void blinkWarningLed(){
