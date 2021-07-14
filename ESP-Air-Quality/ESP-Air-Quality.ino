@@ -22,7 +22,7 @@
  *                         ├ Sensoring
  *                         ├ Connctd
  *                         ├ WiFi Management 
- *                         └ Gauge / LED-Ring
+ *                         └ Gauge / LED-Ring / Warning LED
  * 
  * 
  */
@@ -39,7 +39,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "0.9.23"  // major.minor.build
+#define VERSION "0.9.25"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -112,14 +112,12 @@ int marconiInitTryCnt                   = 0;
 #define ERR_GENERAL            0x00
 #define ERR_NO_WIFI            0x01
 #define ERR_NO_MARCONI_CLIENT  0x02
-#define ERR_NO_MARCONI_INIT    0x03
+#define ERR_MARCONI_SESSION    0x03
 #define ERR_EEPROM             0x04
 #define ERR_NOT_FLASHED        0x05
 #define ERR_BME680             0xF1
 #define ERR_BSEC               0xF2
 #define ERR_BME280             0xF3
-
-
        
 bool warningLedOn = false;
 
@@ -165,7 +163,9 @@ void setup() {
   Serial.println("\n Starting");
   Serial.print("Air Quality - ESP v");
   Serial.println(VERSION);
+  
   Wire.begin();
+  
   initializeLedRing();   
   initializeRandomSeed();
   initWarningLed();
@@ -279,7 +279,7 @@ void doMarconiStuff(unsigned long currTime){
         lastInitTry = currTime;
         initMarconiSession();        
         if (marconiInitTryCnt >= 3){          
-          errorRing(ERR_NO_MARCONI_INIT);
+          errorRing(ERR_MARCONI_SESSION);
         }
       }
       return;
@@ -343,7 +343,6 @@ void doSensorStuff(unsigned long currTime){
           lastCalibrationAnimationStep = currTime;
         }
      }
-     
   }      
 }
 
@@ -436,7 +435,6 @@ bool initBME680(){
     BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
     BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
   };
-
   
   iaqSensor.updateSubscription(sensorList, 10, BSEC_SAMPLE_RATE_LP);
   
@@ -445,6 +443,7 @@ bool initBME680(){
     evalIaqSensorStatus();
     return false;
   }
+  
   Serial.println("OK");
   String output = "BSEC library version " + String(iaqSensor.version.major) + "." + String(iaqSensor.version.minor) + "." + String(iaqSensor.version.major_bugfix) + "." + String(iaqSensor.version.minor_bugfix);
   Serial.println(output);  
@@ -878,7 +877,7 @@ void onDebug(const char *msg) {
 
 // called whenever connection state changes
 void onConnectionStateChange(const unsigned char state) {
-    Serial.printf("[CON] ");
+    Serial.print("[CON] ");
     switch (state) {
       case kConnectionStateInitialized:
         Serial.println("Session was Initialized");
@@ -891,7 +890,8 @@ void onConnectionStateChange(const unsigned char state) {
         break;
       case kConnectionStateInitRejected:
         Serial.println("Session initialization has failed");
-        marconiSessionInitialized = false;        
+        marconiSessionInitialized = false;   
+        errorRing(ERR_MARCONI_SESSION);     
         break;
       case kConnectionObservationRequested:
         Serial.println("Observation was requested");
@@ -904,9 +904,9 @@ void onConnectionStateChange(const unsigned char state) {
 
         // reinit session in case connector was restarted
         marconiSessionInitialized = false;
-
         // after reinit we want to resubscribe
         lastResubscribe = 0;
+        errorRing(ERR_MARCONI_SESSION);
         break;
       default:
         Serial.printf("Unknown connection event %x\n", state);
@@ -1146,7 +1146,7 @@ void errorRing(int error_id){
     case ERR_NO_MARCONI_CLIENT:
        setRingColor(CRGB(255,165,0)); // orange 
        break;
-    case ERR_NO_MARCONI_INIT:
+    case ERR_MARCONI_SESSION:
         setRingColor(CRGB(200,1,175));  // violette 
        break;
     case ERR_GENERAL:

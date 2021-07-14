@@ -1,8 +1,18 @@
 # ESP-Air-Quality
 
-# Runtime Behavior
+Todo:	
 
-
+* Hardware, Available Pins, Blocked Pins etc..
+* ESP preparation (flashing device id and device key for marconi communication)
+* Different Sensor configuration possible
+	* no sensors
+	* BME280 
+	* BME680
+* Runtime Behavior
+	* Configure WiFi
+	* set Wifi Config Mode at Runtime
+	* Factory Reset
+* Sensors (Calibration, Sensor Error)
 
 # Dependencies 
 
@@ -12,17 +22,16 @@ In order to install ESP32 extension to the Arduino IDE, add the line ```https://
 
 Open the Board Management and search for ```esp32```. Choose the version ```1.0.6``` developed by Espressif Systems and hit install. 
 
-
 ## Libraries
 
-| library            | version            | link |
-|:------------------ |:-------------------| :-------------------|
-| Wifi Manager            | 2.0.3-alpha   | https://github.com/tzapu/WiFiManager |
-| Fast LED                | 3.4.0         | https://github.com/FastLED/FastLED |
-| Adafruit Unified Sensor | 1.1.4         | https://github.com/adafruit/Adafruit_Sensor |
-| Adafruit BME280         | 2.1.3         | https://github.com/adafruit/Adafruit_BME280_Library|
-| Bosh Sensortec          | 1.6.1480      | https://github.com/BoschSensortec/BSEC-Arduino-library |
-| connctd Marconi         |               | https://github.com/connctd/marconi-lib |
+| library                 | version        | link |
+|:----------------------- |:-------------- | :-------------------|
+| Wifi Manager            | 2.0.3-alpha    | https://github.com/tzapu/WiFiManager |
+| Fast LED                | 3.4.0          | https://github.com/FastLED/FastLED |
+| Adafruit Unified Sensor | 1.1.4          | https://github.com/adafruit/Adafruit_Sensor |
+| Adafruit BME280         | 2.1.3          | https://github.com/adafruit/Adafruit_BME280_Library|
+| Bosh Sensortec          | 1.6.1480       | https://github.com/BoschSensortec/BSEC-Arduino-library |
+| connctd Marconi         |                | https://github.com/connctd/marconi-lib |
 
 # Error Handling
 
@@ -30,11 +39,11 @@ Open the Board Management and search for ```esp32```. Choose the version ```1.0.
 
 Whenever an error occurs that was identified by the program, the LED ring will blink 3 times in red color. Either the complete ring is blinking, or the gauge only (half of the ring). Before the ring starts blinking, a solid colored ring for is representig the error type.
 
-### Complete Ring
+### Complete Blinking Ring
 
 In general, a complete red blinking LED-ring idicates connection or general system errors. The following color code might give further details on the error type. 
 
-| color    | error            |
+| color    | error              |
 |:-------- |:-------------------|
 | white    | Error not further specified |
 | blue     | Error has to do with Wifi Connection|
@@ -43,8 +52,8 @@ In general, a complete red blinking LED-ring idicates connection or general syst
 | red      | EEPROM failure |
 
 
-### Gauge Only
-In contrast to complete red blinking LED-rings, a half blinking LED ring indicates Errors related to the connected Sensors.
+### Gauge Blinking Only (Half of the LED-Ring)
+In contrast to the red blinking LED-ring, a half blinking LED-ring indicates errors related to the connected sensors.
 
 
 | color    | error            |
