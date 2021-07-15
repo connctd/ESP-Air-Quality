@@ -22,7 +22,7 @@
  *                         ├ Sensoring
  *                         ├ Connctd
  *                         ├ WiFi Management 
- *                         └ Gauge / LED-Ring / Warning LED
+ *                         └ Gauge / LED-Ring / Warning LED 
  * 
  * 
  */
@@ -39,7 +39,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "0.9.25"  // major.minor.build
+#define VERSION "0.9.27"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -80,16 +80,7 @@ unsigned long lastCalibrationAnimationStep = 0;
 
 const char* marconiUrl = "marconi-udp.connectors.connctd.io";
 IPAddress marconiIp;
-
 int port = 5683;
-
-struct DeviceConfig {    
-    char id[DEVICE_ID_SIZE];    
-    unsigned char key[CHACHA_KEY_SIZE];
-};
-
-DeviceConfig deviceConfig;
-EEPROMClass  deviceConfigMemory("devConfig", 128);
 
 MarconiClient *marconiClient;
 bool marconiSessionInitialized = false;
@@ -104,6 +95,13 @@ unsigned long intervalMarconiClientInit = 20000;
 int marconiInitTryCnt                   = 0;
 
 
+struct DeviceConfig {    
+    char id[DEVICE_ID_SIZE];    
+    unsigned char key[CHACHA_KEY_SIZE];
+};
+DeviceConfig deviceConfig;
+#define DEVICE_CONFIG_MEMORY_SIZE 0xFF
+EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 
 #define TRIGGER_PIN 14
@@ -240,7 +238,7 @@ bool initMarconi(){
 }
 
 bool initEEProm(){
-  bool res = deviceConfigMemory.begin(0x500);
+  bool res = deviceConfigMemory.begin(DEVICE_CONFIG_MEMORY_SIZE);
   res = res && bsecStateMemory.begin(BSEC_MAX_STATE_BLOB_SIZE+1);
   return res;
 }
@@ -597,7 +595,10 @@ void evalIaqAccuracy(){
 
 void handleIaqCalibrationEvent(){
   saveBsecState();
-  successGauge();
+  // only success gauge when switching from IAQA_NOT_CALIBRATED to IAQA_UNCERTAIN. 
+  if (iaq_accuracy == IAQA_UNCERTAIN){
+    successGauge();
+  }
   lastPropertyUpdate = 0;
   clearRing();
   refreshGauge();
