@@ -36,10 +36,11 @@
 #include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager                     configuration of WiFi settings via Smartphone
 #include <Adafruit_Sensor.h>  // https://github.com/adafruit/Adafruit_Sensor              common library for arduino sensors
 #include <Adafruit_BME280.h>  // https://github.com/adafruit/Adafruit_BME280_Library      library to work with BME280 sensors
+#include <Adafruit_SCD30.h>   // https://github.com/adafruit/Adafruit_SCD30               library for SCD30 CO2 sensor
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
-#include <Adafruit_SCD30.h>
 
-#define VERSION "1.0.28"  // major.minor.build
+
+#define VERSION "1.0.29"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -58,7 +59,7 @@ CRGB leds[ALLPIXELS];
 
 int animationSpeed = 50;  
 int oldScaleValue  = 1;     // needed for value change animation of gauge
-int gaugeValue     = 0;
+int gaugeValue     = 0;     // how much percent of gauge should light up (from left to right)
 float dimmLevel    = 1.0F;  // value between 0 (off) and 1 (full brightness)
 
 int notCalibratedAnimationState            = 0;
@@ -84,8 +85,8 @@ IPAddress marconiIp;
 int port = 5683;
 
 MarconiClient *marconiClient;
-bool marconiSessionInitialized = false;
-bool marconiClientInitialized = false;
+bool marconiSessionInitialized          = false;
+bool marconiClientInitialized           = false;
 unsigned long resubscribeInterval       = 60000; // in ms
 unsigned long propertyUpdateInterval    = 30000; // in ms
 unsigned long lastResubscribe           = 0; // periodically resubscribe
@@ -101,7 +102,6 @@ struct DeviceConfig {
     unsigned char key[CHACHA_KEY_SIZE];
 };
 DeviceConfig deviceConfig;
-
 EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 
@@ -661,9 +661,35 @@ bool initSCD30(){
     Serial.println("ERROR");
     Serial.println("No SCD30 sensor found on I2C wire");
   }
+  printScd30Configuration();  
   return res;
 }
 
+bool printScd30Configuration(){  
+  Serial.println("---------------------- SCD30 Configuration ------------------------");
+  Serial.print("Measurement interval: ");
+  Serial.print(scd30.getMeasurementInterval());
+  Serial.println(" seconds");
+  Serial.print("Ambient pressure offset: ");
+  Serial.print(scd30.getAmbientPressureOffset());
+  Serial.println(" mBar");
+  Serial.print("Altitude offset: ");
+  Serial.print(scd30.getAltitudeOffset());
+  Serial.println(" meters");
+  Serial.print("Temperature offset: ");
+  Serial.print((float)scd30.getTemperatureOffset()/100.0);
+  Serial.println(" degrees C");
+  Serial.print("Forced Recalibration reference: ");
+  Serial.print(scd30.getForcedCalibrationReference());
+  Serial.println(" ppm");
+    if (scd30.selfCalibrationEnabled()) {
+    Serial.println("Self calibration enabled");
+  } else {
+    Serial.println("Self calibration disabled");
+  }
+
+  Serial.println("-------------------------------------------------------------------");
+}
 // +++++++++++++++++++++++++++ updating Sensor values ++++++++++++++++++++++++++++
 
 bool readTemperature(){  
@@ -1136,27 +1162,27 @@ void triggerNotCalibratedAnimation(){
 }
 
 
-
 void sensorInfo(){
   clearRing();
+  
   if (scd30_available) {
     leds[0] = CRGB(0,255,0);   
   } else {
-    leds[0] = CRGB(255,0,0);   
+    leds[0] = CRGB(255,255,255);   
   }
   if (bme680_available) {
     leds[1] = CRGB(0,255,0);   
   } else {
-    leds[1] = CRGB(255,0,0);   
+    leds[1] =CRGB(255,255,255);   
   }
   if (bme280_available) {
     leds[2] = CRGB(0,255,0);   
   } else {
-    leds[2] = CRGB(255,0,0);   
+    leds[2] = CRGB(255,255,255);   
   }
 
   FastLED.show();
-  delay(3000);
+  delay(1000);
   clearRing();
 }
 

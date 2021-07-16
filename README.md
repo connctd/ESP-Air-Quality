@@ -30,6 +30,7 @@ Open the Board Management and search for ```esp32```. Choose the version ```1.0.
 | Fast LED                | 3.4.0          | https://github.com/FastLED/FastLED |
 | Adafruit Unified Sensor | 1.1.4          | https://github.com/adafruit/Adafruit_Sensor |
 | Adafruit BME280         | 2.1.3          | https://github.com/adafruit/Adafruit_BME280_Library|
+| Adafruit SCD30		  |	1.0.7		   | https://github.com/adafruit/Adafruit_SCD30 |
 | Bosh Sensortec          | 1.6.1480       | https://github.com/BoschSensortec/BSEC-Arduino-library |
 | connctd Marconi         |                | https://github.com/connctd/marconi-lib |
 
@@ -73,4 +74,5 @@ For MacOS, go to folder ```~/Library/Arduino15/packages/esp32/hardware/esp32/1.0
 and change it to 
 
 		recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} {compiler.libraries.ldflags} -Wl,--start-group {object_files} "{archive_file_path}" {compiler.c.elf.libs} {compiler.libraries.ldflags} {build.extra_libs} -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"
+
 
