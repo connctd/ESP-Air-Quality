@@ -37,9 +37,9 @@
 #include <Adafruit_Sensor.h>  // https://github.com/adafruit/Adafruit_Sensor              common library for arduino sensors
 #include <Adafruit_BME280.h>  // https://github.com/adafruit/Adafruit_BME280_Library      library to work with BME280 sensors
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
+#include <Adafruit_SCD30.h>
 
-
-#define VERSION "0.9.27"  // major.minor.build
+#define VERSION "1.0.28"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -65,6 +65,7 @@ int notCalibratedAnimationState            = 0;
 unsigned long lastCalibrationAnimationStep = 0;
 
 // +++++++++++++++++++++++ Connctd +++++++++++++++++++++
+#define DEVICE_CONFIG_MEMORY_SIZE 0xFF
 
 #define property_gauge       0x01
 #define property_co2         0x02
@@ -100,7 +101,7 @@ struct DeviceConfig {
     unsigned char key[CHACHA_KEY_SIZE];
 };
 DeviceConfig deviceConfig;
-#define DEVICE_CONFIG_MEMORY_SIZE 0xFF
+
 EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 // +++++++++++++++++++++++ General +++++++++++++++++++++
 
@@ -138,7 +139,8 @@ int co2           = 0;
 
 bool bme280_available = false;
 bool bme680_available = false;
-
+bool scd30_available  = false;
+Adafruit_SCD30  scd30;
 Adafruit_BME280 bme280; 
 Bsec iaqSensor;
 int iaq_accuracy = IAQA_NOT_CALIBRATED;
@@ -192,16 +194,15 @@ void setup() {
   marconiClientInitialized = initMarconi();
   initSensors();
  
-  clearRing();  
+  refreshGauge();  
 }
 
 void initSensors(){
   bme680_available = initBME680();
   bme280_available = initBME280();   
+  scd30_available = initSCD30();
 
-  if (!sensorsAvailable()){
-     noSensorAnimation();
-  }  
+  sensorInfo();
 }
 
 void initWarningLed(){
@@ -302,9 +303,13 @@ void doMarconiStuff(unsigned long currTime){
         }
         if (readPressure()){
            sendPressureValue();
-        }
-        if (readCo2Equivalent()){
+        }        
+        if (readCo2()){
+          sendCo2Value();
+        } else {
+         if (readCo2Equivalent()){
            sendCo2Value();
+         } 
         }
       }
     }     
@@ -341,7 +346,16 @@ void doSensorStuff(unsigned long currTime){
           lastCalibrationAnimationStep = currTime;
         }
      }
-  }      
+  }
+
+  
+  if (scd30_available){
+    if (scd30.dataReady()){
+      if (!scd30.read()){ 
+        Serial.println("Error reading SCD30 data"); 
+       }
+    }
+  }
 }
 
 
@@ -460,7 +474,7 @@ bool checkBsecState(){
 }
 
 bool sensorsAvailable(){
-  return bme280_available || bme680_available;
+  return bme280_available || bme680_available || scd30_available;
 }
 
 void eraseBsecState(){
@@ -636,6 +650,19 @@ bool initBME280(){
   return res;
 }
 
+// +++++++++++++++++++++++++++++++++++ SCD30 +++++++++++++++++++++++++++++++++++
+
+bool initSCD30(){
+  Serial.print("Initializing SCD30 .... ");
+  bool res = scd30.begin();
+  if (res) {
+    Serial.println("OK");
+  } else {
+    Serial.println("ERROR");
+    Serial.println("No SCD30 sensor found on I2C wire");
+  }
+  return res;
+}
 
 // +++++++++++++++++++++++++++ updating Sensor values ++++++++++++++++++++++++++++
 
@@ -645,11 +672,13 @@ bool readTemperature(){
   }
   float newTemperature;
   
-  if (bme680_available) {
+  if (scd30_available){
+    newTemperature = float(int(scd30.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
+  } else if (bme680_available) {
     newTemperature = float(int(iaqSensor.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
   } else if (bme280_available){
     newTemperature = float(int(bme280.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
-  }
+  } 
   
   if (temperature != newTemperature){
     temperature = newTemperature;
@@ -667,7 +696,9 @@ bool readHumidity(){
   }
   float newHumidity = 0.0;
   
-  if (bme680_available){
+  if (scd30_available){
+    newHumidity = int(scd30.relative_humidity);
+ } else if (bme680_available){
     newHumidity = int(iaqSensor.humidity);
   } else if (bme280_available){
     newHumidity = int(bme280.readHumidity()); // ignore values after . 
@@ -719,6 +750,19 @@ bool readCo2Equivalent(){
      }
   }
   return false;
+}
+
+bool readCo2(){
+  if (!scd30_available){
+    return false;
+  }
+   float newCo2 = int(scd30.CO2);
+   if (newCo2 != co2){
+    co2 = newCo2;
+    Serial.print("CO2 value = ");
+    Serial.print(co2);
+    Serial.println(" ppm");
+   }
 }
 
 // +++++++++++++++++++++++++++++++++++ Button +++++++++++++++++++++++++++++++++++
@@ -1091,15 +1135,31 @@ void triggerNotCalibratedAnimation(){
   FastLED.show();  
 }
 
-void noSensorAnimation(){
-   setGaugeColor(CRGB(255,255,0));   
-    delay(500);
-    clearRing();
-    delay(500);
-    setGaugeColor(CRGB(255,255,0));   
-    delay(2000);
-    clearRing();
+
+
+void sensorInfo(){
+  clearRing();
+  if (scd30_available) {
+    leds[0] = CRGB(0,255,0);   
+  } else {
+    leds[0] = CRGB(255,0,0);   
+  }
+  if (bme680_available) {
+    leds[1] = CRGB(0,255,0);   
+  } else {
+    leds[1] = CRGB(255,0,0);   
+  }
+  if (bme280_available) {
+    leds[2] = CRGB(0,255,0);   
+  } else {
+    leds[2] = CRGB(255,0,0);   
+  }
+
+  FastLED.show();
+  delay(3000);
+  clearRing();
 }
+
 
 void animateGauge(int startPixel, int stopPixel){
   if (startPixel <= stopPixel) {  
