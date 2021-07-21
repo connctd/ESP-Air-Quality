@@ -8,10 +8,11 @@ Todo:
 	* no sensors
 	* BME280 
 	* BME680
+	* SCD30
 * Runtime Behavior
 	* Configure WiFi
 	* set Wifi Config Mode at Runtime
-	* Factory Reset
+	* Factory Reset‚
 * Sensors (Calibration, Sensor Error)
 
 # Dependencies 

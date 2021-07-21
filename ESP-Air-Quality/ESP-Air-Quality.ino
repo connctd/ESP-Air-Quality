@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.29"  // major.minor.build
+#define VERSION "1.0.31"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -788,7 +788,9 @@ bool readCo2(){
     Serial.print("CO2 value = ");
     Serial.print(co2);
     Serial.println(" ppm");
+    return true;
    }
+   return false;
 }
 
 // +++++++++++++++++++++++++++++++++++ Button +++++++++++++++++++++++++++++++++++
