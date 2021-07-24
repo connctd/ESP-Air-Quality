@@ -11,7 +11,7 @@
 
 #define DEVICE_ID_SIZE 17
 #define CHACHA_KEY_SIZE 32
-#define DEVICE_CONFIG_MEMORY_SIZE 0x500
+#define DEVICE_CONFIG_MEMORY_SIZE 0x128
 
 struct DeviceConfig {    
     char id[DEVICE_ID_SIZE];    
@@ -41,10 +41,13 @@ void setup() {
 
   Serial.println("generating DeviceConfig object");
   delay(1000);
-  deviceConfig = (DeviceConfig){ "6iga3u4v4ij41i88",{  0x5b, 0x4b, 0x3c, 0x49, 0x45, 0x90, 0x5b, 0xed, 0x6a,
-                                                       0x9e, 0x0d, 0x45, 0xe9, 0xd5, 0xbb, 0x23, 0x96, 0x05,
-                                                       0xe3, 0xda, 0xe4, 0x96, 0x89, 0x7c, 0xcc, 0xc6, 0xa3,
-                                                       0xcf, 0x66, 0x84, 0xee, 0x47 }}; 
+
+
+// deviceConfig = (DeviceConfig){ "<put device id here>", <put device key here - { 0x3d, 0x81, etc.. }>}; 
+
+
+// In order to generate your device key, take the device secret and convert it to base64 hex.
+// use this tool https://cryptii.com/pipes/base64-to-hex
 
   Serial.println("DeviceConfig generated");
   Serial.print("DeviceID = ");

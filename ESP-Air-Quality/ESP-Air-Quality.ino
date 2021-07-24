@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.31"  // major.minor.build
+#define VERSION "1.0.32"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -50,7 +50,7 @@ const char* AP_SSID = "Air-Quality";
 
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
 #define LED_PIN   25
-#define NUMPIXELS 12
+#define NUMPIXELS 13
 #define ALLPIXELS 24
 #define LED_TYPE    WS2811
 #define COLOR_ORDER GRB
@@ -1138,7 +1138,7 @@ void refreshGauge(){
 }
 
 int getScaleValue(int value){
-  int pixels = (NUMPIXELS * value)/100;
+  int pixels = round((NUMPIXELS * value)/0x100);
   
   if (pixels > NUMPIXELS) {
     return NUMPIXELS;    
