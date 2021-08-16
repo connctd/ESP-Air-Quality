@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.32"  // major.minor.build
+#define VERSION "1.0.33"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -1138,7 +1138,10 @@ void refreshGauge(){
 }
 
 int getScaleValue(int value){
-  int pixels = round((NUMPIXELS * value)/0x100);
+  int pixels = round((NUMPIXELS * value)/100.0);
+
+  Serial.print("Pixels ");
+  Serial.println(pixels);
   
   if (pixels > NUMPIXELS) {
     return NUMPIXELS;    
