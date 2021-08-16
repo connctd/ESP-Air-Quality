@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.33"  // major.minor.build
+#define VERSION "1.0.34"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -127,7 +127,7 @@ bool warningLedOn = false;
 #define IAQA_CALIBRATION_COMPLETE 3
 
 #define SEALEVELPRESSURE_HPA (1013.25)
-
+#define TEMPERATURE_OFFSET -4.2
 
 bool buttonPressed = false;
 unsigned long buttonPressMillis = 0;
@@ -200,7 +200,7 @@ void setup() {
 void initSensors(){
   bme680_available = initBME680();
   bme280_available = initBME280();   
-  scd30_available = initSCD30();
+  scd30_available  = initSCD30();
 
   sensorInfo();
 }
@@ -705,6 +705,9 @@ bool readTemperature(){
   } else if (bme280_available){
     newTemperature = float(int(bme280.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
   } 
+
+  // adding the offset - this is only needed for connctd FRAME setup to compensate ESP32 heat
+  newTemperature += TEMPERATURE_OFFSET;
   
   if (temperature != newTemperature){
     temperature = newTemperature;
