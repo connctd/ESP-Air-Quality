@@ -1,19 +1,29 @@
 # ESP-Air-Quality
 
-Todo:	
+## Starting Sequence
 
-* Hardware, Available Pins, Blocked Pins etc..
-* ESP preparation (flashing device id and device key for marconi communication)
-* Different Sensor configuration possible
-	* no sensors
-	* BME280 
-	* BME680
-	* SCD30
-* Runtime Behavior
-	* Configure WiFi
-	* set Wifi Config Mode at Runtime
-	* Factory Reset‚
-* Sensors (Calibration, Sensor Error)
+After the system has been  powered up it tries to establish a connection with the WLAN. If a connection could be established, the entire LED ring flashes green. If this was not possible, for example because no WiFi has been configured yet, the LED RING lights up blue permanently and the System awaits to setup Wifi credentials (See setting up Wifi)
+
+Afterwards, the sensor configuration is shown by the first 3 LEDs of the LED ring:
+
+- First LED green, SCD30 installed and ready, otherwise white.
+- Second LED green, BME680 installed and ready, otherwise white
+- Third LED green, BME280 installed and ready, otherwise white
+
+If all 3 LEDs are white, no sensor is installed.
+
+If the BME680 sensor is installed, it must first be adjusted so that usable values can be measured. This process can take up to 10min at the first start. If the calibration was completed successfully, it will not take so much time in the future. 
+
+The same applies to the temperature values; these sensors generally need up to 15 minutes before the values reach their high precision.
+
+## Setting Up the WiFi
+
+When the system starts and cannot connect to the WLAN, it automatically goes into configuration mode, recognizable by a blue LED ring. You can also start the configuration mode manually by pressing and holding the button on the back until the LED ring lights up green (5s). Then connect the smartphone (or PC) to the Network with the SSID "Air-Quality". You will be prompted to "Register to network". Follow this prompt and you will get to the configuration menu. Select the network from the list and enter the password, then press "Save". The system restarts and tries to log in to the network. If this is successful, the LED ring flashes green, otherwise the network configuration starts and the steps must be repeated.
+
+## Factory Reset
+In order to reset the device to it's factory settings, the button on the back must be pressed for at least 15s. 
+
+After 5s the LED ring will light up green, after 12s it will light up red. After 15s it will blink red and the device will does a factory reset. This will delete the network settings and the EEProm settings like the BME680 calibration data. 
 
 # Dependencies 
 
