@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.34"  // major.minor.build
+#define VERSION "1.0.36"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -59,7 +59,7 @@ CRGB leds[ALLPIXELS];
 
 int animationSpeed = 50;  
 int oldScaleValue  = 1;     // needed for value change animation of gauge
-int gaugeValue     = 0;     // how much percent of gauge should light up (from left to right)
+int gaugeValue     = -1;     // how much percent of gauge should light up (from left to right); -1 means no value set from backend
 float dimmLevel    = 1.0F;  // value between 0 (off) and 1 (full brightness)
 
 int notCalibratedAnimationState            = 0;
@@ -93,6 +93,8 @@ unsigned long lastResubscribe           = 0; // periodically resubscribe
 unsigned long lastInitTry               = 0;
 unsigned long lastPropertyUpdate        = 0; // time when property updates were sent
 unsigned long lastMarconiClientInitTry  = 0;
+unsigned long lastObservationOngoingEventReceived = 0;
+unsigned long observationTimeout        = 1000*60*5; // max time with no observation ongoing -> will not receive any actions from backend
 unsigned long intervalMarconiClientInit = 20000;
 int marconiInitTryCnt                   = 0;
 
@@ -117,6 +119,7 @@ EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 #define ERR_BME680             0xF1
 #define ERR_BSEC               0xF2
 #define ERR_BME280             0xF3
+
        
 bool warningLedOn = false;
 
@@ -261,11 +264,13 @@ void loop() {
 void doMarconiStuff(unsigned long currTime){
   
    // check if client is initialized
-   if (!marconiClientInitialized){
-     
+   if (!marconiClientInitialized){     
       if (currTime - lastMarconiClientInitTry > intervalMarconiClientInit){
         if (!initMarconi() && (marconiInitTryCnt >= 3)){              
-          errorRing(ERR_NO_MARCONI_CLIENT);              
+          errorRing(ERR_NO_MARCONI_CLIENT);                       
+        }
+        if (!initMarconi() && (marconiInitTryCnt >= 10)){                        
+          ESP.restart();     
         }
       }
       return;
@@ -278,7 +283,14 @@ void doMarconiStuff(unsigned long currTime){
         lastInitTry = currTime;
         initMarconiSession();        
         if (marconiInitTryCnt >= 3){          
-          errorRing(ERR_MARCONI_SESSION);
+          Serial.print("Unable to initialize Session. Try ");
+          Serial.print(marconiInitTryCnt);
+          Serial.println("/10");
+          errorRing(ERR_MARCONI_SESSION);          
+        }
+        if (marconiInitTryCnt >= 10){  
+          Serial.println("Unable to initialize Session, System will reboot now");        
+           ESP.restart();  
         }
       }
       return;
@@ -286,8 +298,22 @@ void doMarconiStuff(unsigned long currTime){
 
    if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
       lastResubscribe = currTime;
-      marconiClient->subscribeForActions(onAction);
-   }    
+      marconiClient->subscribeForActions(onAction);    
+   }   
+
+   if ((gaugeValue >=0) && (currTime - lastObservationOngoingEventReceived > 75000)) {
+         Serial.println("Connection seems to be lost.");
+         Serial.println("Gauge will be disabled by setting color white");
+         gaugeValue = -1;         
+         refreshGauge();
+   }
+   
+   if (currTime - lastObservationOngoingEventReceived > observationTimeout) {
+        Serial.println("Observation Timeout - System tries to init session again.");
+        marconiSessionInitialized = false;  
+        lastResubscribe == 0;
+        refreshGauge();
+   } 
    
    // periodically send property updates
    if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
@@ -698,12 +724,12 @@ bool readTemperature(){
   }
   float newTemperature;
   
-  if (scd30_available){
-    newTemperature = float(int(scd30.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
-  } else if (bme680_available) {
+  if (bme680_available){
     newTemperature = float(int(iaqSensor.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
-  } else if (bme280_available){
+  } else if (bme280_available) {
     newTemperature = float(int(bme280.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
+  } else if (scd30_available){
+    newTemperature = float(int(scd30.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
   } 
 
   // adding the offset - this is only needed for connctd FRAME setup to compensate ESP32 heat
@@ -974,6 +1000,7 @@ void onConnectionStateChange(const unsigned char state) {
         break;
       case kConnectionObservationOngoing:
         Serial.println("Observation is now ongoing");
+        lastObservationOngoingEventReceived = millis();
         break;
       case kConnectionObservationRejected:
         Serial.println("Observation was rejected");
@@ -1136,6 +1163,7 @@ void triggerGaugeDimmLevel(){
 void refreshGauge(){
   int as_mem = animationSpeed;  // remember animation speed, animation will be disabled temporarily
   animationSpeed = 0;
+  clearRing();
   animateGauge(0,oldScaleValue);
   animationSpeed = as_mem;
 }
@@ -1196,6 +1224,14 @@ void sensorInfo(){
 
 
 void animateGauge(int startPixel, int stopPixel){
+
+  if ((gaugeValue < 0) || (!marconiSessionInitialized)){
+    leds[0] = CRGB(255,255,255); 
+    FastLED.show();
+    return;
+  }
+
+  
   if (startPixel <= stopPixel) {  
     for (int i=0; i < stopPixel; i++){
       leds[i] = CRGB( (255/NUMPIXELS)*i,(150-(150/NUMPIXELS)*i),0); 
@@ -1234,6 +1270,8 @@ void setGaugeColor(const CRGB color){
 
 
 void errorRing(int error_id){
+  blinkRing(CRGB(255,0,0));
+  delay(500);    
   switch (error_id){
     case ERR_NO_WIFI:
        setRingColor(CRGB(0,0,255));   // blue
@@ -1253,12 +1291,14 @@ void errorRing(int error_id){
     case ERR_NOT_FLASHED:
        setRingColor(CRGB(255,0,0));  // red
        break;      
-  }
-  delay(1000);  
-  blinkRing(CRGB(255,0,0));
+  }  
+  delay(1000);
+  refreshGauge();
 }
 
-void errorGauge(int error_id){
+void errorGauge(int error_id){   
+  blinkGauge(CRGB(255,0,0)); 
+  delay(500);       
    switch (error_id){
     case ERR_BME680:
        setGaugeColor(CRGB(255,165,0));   // orange 
@@ -1273,8 +1313,8 @@ void errorGauge(int error_id){
        setRingColor(CRGB(255,255,0));      // yellow
        break;        
   }
-  delay(1000);
-  blinkGauge(CRGB(255,0,0));  
+  delay(1000);    
+  refreshGauge();
 }
 
 void blinkRing(CRGB color){
