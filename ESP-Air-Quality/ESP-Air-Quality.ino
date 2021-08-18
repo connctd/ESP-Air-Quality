@@ -321,15 +321,14 @@ void doMarconiStuff(unsigned long currTime){
       sendGaugeDimmLevelValue();
       sendWarningLedState();
       if (sensorsAvailable()) {              
-        if (readTemperature()){
-           sendTemperatureValue();
-        }
-        if (readHumidity()){
-           sendHumidityValue();
-        }
-        if (readPressure()){
-           sendPressureValue();
-        }        
+        readTemperature();
+        readHumidity();
+        readPressure();
+        
+        sendTemperatureValue();       
+        sendHumidityValue();       
+        sendPressureValue();
+                
         if (readCo2()){
           sendCo2Value();
         } else {
@@ -725,11 +724,11 @@ bool readTemperature(){
   float newTemperature;
   
   if (bme680_available){
-    newTemperature = float(int(iaqSensor.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
+    newTemperature = iaqSensor.temperature;  // use 0.5 steps for temperature  
   } else if (bme280_available) {
-    newTemperature = float(int(bme280.readTemperature()*2.0F))/2.0F;  // use 0.5 steps for temperature  
+    newTemperature = bme280.readTemperature();  // use 0.5 steps for temperature  
   } else if (scd30_available){
-    newTemperature = float(int(scd30.temperature*2.0F))/2.0F;  // use 0.5 steps for temperature  
+    newTemperature = scd30.temperature;  // use 0.5 steps for temperature  
   } 
 
   // adding the offset - this is only needed for connctd FRAME setup to compensate ESP32 heat
@@ -740,10 +739,11 @@ bool readTemperature(){
     Serial.print("new temperature value = ");
     Serial.println(temperature);
     return true;
-  }
-  
+  }  
   return false;
 }
+
+
 
 bool readHumidity(){
   if (!sensorsAvailable()) {
@@ -766,6 +766,7 @@ bool readHumidity(){
   }
   return false;
 }
+
 
 bool readPressure(){
   if (!sensorsAvailable()) {
