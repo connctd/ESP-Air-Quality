@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.36"  // major.minor.build
+#define VERSION "1.0.38"  // major.minor.build
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -120,6 +120,10 @@ EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 #define ERR_BSEC               0xF2
 #define ERR_BME280             0xF3
 
+#define WATCHDOG_TIMER         40
+
+int watchdogInterval = 15000; // 15s
+int watchDogCounter = WATCHDOG_TIMER; //
        
 bool warningLedOn = false;
 
@@ -254,12 +258,36 @@ bool initEEProm(){
 void loop() {    
   checkButton(); // check wether trigger button was pressed    
 
+  watchdog(millis());
   doMarconiStuff(millis());  
   doSensorStuff(millis());
   
   // and wait for 10ms
   delay(10);
 }
+
+void watchdog(unsigned long currTime){
+
+  if (watchDogCounter <= 0){
+    Serial.println("======= WATCHDOG =======");
+    Serial.println("System will reboot now!");    
+    ESP.restart();
+  }
+  
+  if ((gaugeValue < 0) || (!marconiSessionInitialized) || (!marconiClientInitialized) || (currTime - lastObservationOngoingEventReceived > observationTimeout) || (lastObservationOngoingEventReceived==0)){
+      if (watchDogCounter == WATCHDOG_TIMER){
+        Serial.println("Watchdog active, countown is running");
+      }
+      watchDogCounter--;
+  } else {
+    if (watchDogCounter <  WATCHDOG_TIMER){
+      Serial.println("Watchdog Timer reset - everything seems to be fine");
+    }
+    watchDogCounter = WATCHDOG_TIMER;
+  }
+  
+}
+
 
 void doMarconiStuff(unsigned long currTime){
   
@@ -303,7 +331,7 @@ void doMarconiStuff(unsigned long currTime){
 
    if ((gaugeValue >=0) && (currTime - lastObservationOngoingEventReceived > 75000)) {
          Serial.println("Connection seems to be lost.");
-         Serial.println("Gauge will be disabled by setting color white");
+         Serial.println("Gauge will be disabled by setting color to white");
          gaugeValue = -1;         
          refreshGauge();
    }
