@@ -123,6 +123,7 @@ EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 #define WATCHDOG_TIMER         40
 
 int watchdogInterval = 15000; // 15s
+unsigned long lastWatchdogCheck = 0;
 int watchDogCounter = WATCHDOG_TIMER; //
        
 bool warningLedOn = false;
@@ -268,9 +269,16 @@ void loop() {
 
 void watchdog(unsigned long currTime){
 
+  if (currTime - lastWatchdogCheck < watchdogInterval){
+    return;
+  }
+  lastWatchdogCheck = currTime;
   if (watchDogCounter <= 0){
+    Serial.println("");
     Serial.println("======= WATCHDOG =======");
     Serial.println("System will reboot now!");    
+    Serial.println("");
+    Serial.println("");
     ESP.restart();
   }
   
@@ -330,9 +338,9 @@ void doMarconiStuff(unsigned long currTime){
    }   
 
    if ((gaugeValue >=0) && (currTime - lastObservationOngoingEventReceived > 75000)) {
-         Serial.println("Connection seems to be lost.");
+         Serial.println("Connection seems to be lost. Did not received event 'Observation Ongoing'");
          Serial.println("Gauge will be disabled by setting color to white");
-         gaugeValue = -1;         
+         marconiSessionInitialized = false;         
          refreshGauge();
    }
    
@@ -1030,6 +1038,7 @@ void onConnectionStateChange(const unsigned char state) {
       case kConnectionObservationOngoing:
         Serial.println("Observation is now ongoing");
         lastObservationOngoingEventReceived = millis();
+        marconiSessionInitialized = true;
         break;
       case kConnectionObservationRejected:
         Serial.println("Observation was rejected");
@@ -1044,6 +1053,7 @@ void onConnectionStateChange(const unsigned char state) {
         Serial.printf("Unknown connection event %x\n", state);
         break;
     }
+    refreshGauge();
 }
 
 // called whenever an error occurs in marconi lib
@@ -1069,6 +1079,7 @@ void onErr(const unsigned char error) {
             Serial.printf("Unknown error event %x\n", error);
             break;
     }
+   refreshGauge();
 }
 
 bool resolveMarconiIp(){
