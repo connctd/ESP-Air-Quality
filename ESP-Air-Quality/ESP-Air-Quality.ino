@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.38"  // major.minor.build
+#define VERSION "1.0.39"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -57,10 +57,10 @@ const char* AP_SSID = "Air-Quality";
 
 CRGB leds[ALLPIXELS];
 
-int animationSpeed = 50;  
-int oldScaleValue  = 1;     // needed for value change animation of gauge
-int gaugeValue     = -1;     // how much percent of gauge should light up (from left to right); -1 means no value set from backend
-float dimmLevel    = 1.0F;  // value between 0 (off) and 1 (full brightness)
+int   animationSpeed = 50;  
+int   oldScaleValue  = 1;     // needed for value change animation of gauge
+int   gaugeValue     = -1;    // how much percent of gauge should light up (from left to right); -1 means no value set from backend
+float dimmLevel      = 1.0F;  // value between 0 (off) and 1 (full brightness)
 
 int notCalibratedAnimationState            = 0;
 unsigned long lastCalibrationAnimationStep = 0;
@@ -120,13 +120,15 @@ EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 #define ERR_BSEC               0xF2
 #define ERR_BME280             0xF3
 
-#define WATCHDOG_TIMER         40
+#define WATCHDOG_TIMER         40 // 40 * 15s = 10min (600s)
 
-int watchdogInterval = 15000; // 15s
-unsigned long lastWatchdogCheck = 0;
-int watchDogCounter = WATCHDOG_TIMER; //
-       
 bool warningLedOn = false;
+
+int watchdogInterval            = 15000; // 15s 
+unsigned long lastWatchdogCheck = 0;
+int watchDogCounter             = WATCHDOG_TIMER; // will be decreased every watchdog Interval when bad behavior was detected
+                                                  // system restarts when watchDogCounter reaches 0  
+                                                  // will be set to WATCHDOG_TIMER when all conditions are fulfilled         
 
 // +++++++++++++++++++++++ Sensoring +++++++++++++++++++
 #define IAQA_NOT_CALIBRATED       0
@@ -152,11 +154,12 @@ Adafruit_SCD30  scd30;
 Adafruit_BME280 bme280; 
 Bsec iaqSensor;
 int iaq_accuracy = IAQA_NOT_CALIBRATED;
-uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
+
 EEPROMClass  bsecStateMemory("bsecState", BSEC_MAX_STATE_BLOB_SIZE+1);
-bool periodicallyBsecSave = false; // periodically save the bsec state to EEPROM? will be addionally saved whenever bsec_accuracy switches to 1 or 3; 
+uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
+bool periodicallyBsecSave             = false; // periodically save the bsec state to EEPROM? will be addionally saved whenever bsec_accuracy switches to 1 or 3; 
 unsigned long bsecStateUpdateInterval = 60*60*1000; // every 60min
-unsigned long lastBsecUpdate=0;
+unsigned long lastBsecUpdate          = 0;
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
@@ -195,7 +198,10 @@ void setup() {
      
   initializeWiFi(); 
 
-  if (!connectToWiFi()){    
+  if (!connectToWiFi()){   
+    Serial.println("ERROR - Unable to connect to WiFi");
+    Serial.println("System will restart now"); 
+    errorRing(ERR_NO_WIFI);
     ESP.restart();
   }
  
