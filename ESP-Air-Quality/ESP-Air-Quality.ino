@@ -289,7 +289,7 @@ void watchdog(unsigned long currTime){
       watchDogCounter--;
   } else {
     if (watchDogCounter <  WATCHDOG_TIMER){
-      Serial.println("Watchdog Timer reset - everything seems to be fine");
+      Serial.println("Watchdog Countdown Reset - everything seems to be fine");
     }
     watchDogCounter = WATCHDOG_TIMER;
   }
@@ -337,7 +337,7 @@ void doMarconiStuff(unsigned long currTime){
       marconiClient->subscribeForActions(onAction);    
    }   
 
-   if ((gaugeValue >=0) && (currTime - lastObservationOngoingEventReceived > 75000)) {
+   if ((gaugeValue >=0) && (currTime - lastObservationOngoingEventReceived > 125000)) {
          Serial.println("Connection seems to be lost. Did not received event 'Observation Ongoing'");
          Serial.println("Gauge will be disabled by setting color to white");
          marconiSessionInitialized = false;         
