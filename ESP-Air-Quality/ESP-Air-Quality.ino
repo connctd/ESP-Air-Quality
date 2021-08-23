@@ -47,7 +47,6 @@
 WiFiManager wm;   
 WiFiManagerParameter custom_field; 
 const char* AP_SSID = "Air-Quality";
-
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
 #define LED_PIN   25
 #define NUMPIXELS 13
@@ -160,6 +159,8 @@ uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
 bool periodicallyBsecSave             = false; // periodically save the bsec state to EEPROM? will be addionally saved whenever bsec_accuracy switches to 1 or 3; 
 unsigned long bsecStateUpdateInterval = 60*60*1000; // every 60min
 unsigned long lastBsecUpdate          = 0;
+unsigned long lastValueChange = 0;
+unsigned long valueChangeTimeout = 1000*60*10; // 10 min
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
@@ -283,19 +284,37 @@ void watchdog(unsigned long currTime){
     Serial.println("");
     Serial.println("======= WATCHDOG =======");
     Serial.println("System will reboot now!");    
+    Serial.println("========================");
     Serial.println("");
     Serial.println("");
     ESP.restart();
   }
-  
-  if ((gaugeValue < 0) || (!marconiSessionInitialized) || (!marconiClientInitialized) || (currTime - lastObservationOngoingEventReceived > observationTimeout) || (lastObservationOngoingEventReceived==0)){
+
+  // check all conditions
+  if ((isValueChangeTimeout()) || (gaugeValue < 0) || (!marconiSessionInitialized) || (!marconiClientInitialized) || (isObservationTimeout())){
+    // watchdog activation? or was it activated already?
       if (watchDogCounter == WATCHDOG_TIMER){
+        // watchdog activation, print current status
+        Serial.println("============ WATCHDOG ===========");
         Serial.println("Watchdog active, countown is running");
+        Serial.print("ValueChangeTimeout        : ");
+        Serial.println(isValueChangeTimeout());
+        Serial.print("GaugeValue                : ");
+        Serial.println(gaugeValue);
+        Serial.print("marconiClientInitialized  : ");
+        Serial.println(marconiClientInitialized);
+        Serial.print("marconiSessionInitialized : ");
+        Serial.println(marconiSessionInitialized);
+        Serial.print("observation timeout       : ");
+        Serial.println(isObservationTimeout());
+        Serial.println("================================");
       }
       watchDogCounter--;
   } else {
     if (watchDogCounter <  WATCHDOG_TIMER){
+      Serial.println("============ WATCHDOG ===========");
       Serial.println("Watchdog Countdown Reset - everything seems to be fine");
+      Serial.println("================================");
     }
     watchDogCounter = WATCHDOG_TIMER;
   }
@@ -338,12 +357,10 @@ void doMarconiStuff(unsigned long currTime){
       return;
   }  
 
-   if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
-      lastResubscribe = currTime;
-      marconiClient->subscribeForActions(onAction);    
-   }   
+  
 
-   if ((gaugeValue >=0) && (currTime - lastObservationOngoingEventReceived > 125000)) {
+
+   if ((gaugeValue >=0) && (currTime - lastObservationOngoingEventReceived > 180000)) {
          Serial.println("Connection seems to be lost. Did not received event 'Observation Ongoing'");
          Serial.println("Gauge will be disabled by setting color to white");
          marconiSessionInitialized = false;         
@@ -356,17 +373,25 @@ void doMarconiStuff(unsigned long currTime){
         lastResubscribe == 0;
         refreshGauge();
    } 
+
+   
+   if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
+      lastResubscribe = currTime;
+      marconiClient->subscribeForActions(onAction);    
+   }   
    
    // periodically send property updates
-   if (currTime - lastPropertyUpdate > propertyUpdateInterval) {      
+   if (currTime - lastPropertyUpdate > propertyUpdateInterval) {    
+      Serial.println("Sending Properties Update");  
       lastPropertyUpdate = currTime;
       sendGaugeDimmLevelValue();
       sendWarningLedState();
       if (sensorsAvailable()) {              
+        Serial.println("Reading property values");
         readTemperature();
         readHumidity();
         readPressure();
-        
+        Serial.println("Sending property values");
         sendTemperatureValue();       
         sendHumidityValue();       
         sendPressureValue();
@@ -759,10 +784,19 @@ bool printScd30Configuration(){
 }
 // +++++++++++++++++++++++++++ updating Sensor values ++++++++++++++++++++++++++++
 
+bool isValueChangeTimeout(){
+  if (!sensorsAvailable()){
+    return false;
+  }
+  return (millis() - lastValueChange > valueChangeTimeout);
+}
+
 bool readTemperature(){  
   if (!sensorsAvailable()) {
     return false;
   }
+ 
+ 
   float newTemperature;
   
   if (bme680_available){
@@ -777,6 +811,7 @@ bool readTemperature(){
   newTemperature += TEMPERATURE_OFFSET;
   
   if (temperature != newTemperature){
+    lastValueChange = millis();
     temperature = newTemperature;
     Serial.print("new temperature value = ");
     Serial.println(temperature);
@@ -801,6 +836,7 @@ bool readHumidity(){
     newHumidity = int(bme280.readHumidity()); // ignore values after . 
   }
   if (humidity != newHumidity){
+    lastValueChange = millis();
     humidity = newHumidity;
     Serial.print("new humidity value = ");
     Serial.println(humidity);  
@@ -822,6 +858,7 @@ bool readPressure(){
   }
   
   if (pressure != newPressure) {
+    lastValueChange = millis();
     pressure = newPressure;
     Serial.print("new pressure value = ");
     Serial.println(pressure);
@@ -840,6 +877,7 @@ bool readCo2Equivalent(){
     float newCo2 = int(iaqSensor.co2Equivalent);
     
     if (newCo2 != co2){
+      lastValueChange = millis();
       co2 = newCo2;  
       Serial.print("Co2 equivalent = ");
       Serial.print(co2);
@@ -856,6 +894,7 @@ bool readCo2(){
   }
    float newCo2 = int(scd30.CO2);
    if (newCo2 != co2){
+    lastValueChange = millis();
     co2 = newCo2;
     Serial.print("CO2 value = ");
     Serial.print(co2);
@@ -1043,7 +1082,7 @@ void onConnectionStateChange(const unsigned char state) {
         break;
       case kConnectionObservationOngoing:
         Serial.println("Observation is now ongoing");
-        lastObservationOngoingEventReceived = millis();
+        lastObservationOngoingEventReceived = millis();         
         marconiSessionInitialized = true;
         break;
       case kConnectionObservationRejected:
@@ -1086,6 +1125,10 @@ void onErr(const unsigned char error) {
             break;
     }
    refreshGauge();
+}
+
+bool isObservationTimeout() {
+  return (millis() - lastObservationOngoingEventReceived > observationTimeout);
 }
 
 bool resolveMarconiIp(){
