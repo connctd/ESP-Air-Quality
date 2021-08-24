@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.39"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.40"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -115,6 +115,7 @@ EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 #define ERR_MARCONI_SESSION    0x03
 #define ERR_EEPROM             0x04
 #define ERR_NOT_FLASHED        0x05
+#define ERR_REQUESTED_RESTART  0x06
 #define ERR_BME680             0xF1
 #define ERR_BSEC               0xF2
 #define ERR_BME280             0xF3
@@ -275,6 +276,20 @@ void loop() {
 }
 
 void watchdog(unsigned long currTime){
+
+  if (gaugeValue == -255){    
+    Serial.println("");
+    Serial.println("======= WATCHDOG =======");
+    Serial.println("    Requested Restart");    
+    Serial.println("System will restart now!");
+    Serial.println("========================");
+    Serial.println("");
+    Serial.println("");
+    errorRing(ERR_REQUESTED_RESTART);
+    ESP.restart();
+    return;
+  }
+
 
   if (currTime - lastWatchdogCheck < watchdogInterval){
     return;
@@ -1380,6 +1395,9 @@ void errorRing(int error_id){
     case ERR_NOT_FLASHED:
        setRingColor(CRGB(255,0,0));  // red
        break;      
+    case ERR_REQUESTED_RESTART:
+       setRingColor(CRGB(0,255,0));  // green
+       break;
   }  
   delay(1000);
   refreshGauge();
