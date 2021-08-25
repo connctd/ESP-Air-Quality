@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.43"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.44"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -1088,6 +1088,9 @@ void onConnectionStateChange(const unsigned char state) {
 
         // enforce resubscription
         lastResubscribe = 0;
+
+        // prevent observation timeout
+        lastObservationOngoingEventReceived = millis();
         break;
       case kConnectionStateUninitialized:
         Serial.println("Session initialization ongoing");
