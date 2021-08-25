@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.44"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.46"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -93,9 +93,11 @@ unsigned long lastInitTry               = 0;
 unsigned long lastPropertyUpdate        = 0; // time when property updates were sent
 unsigned long lastMarconiClientInitTry  = 0;
 unsigned long lastObservationOngoingEventReceived = 0;
+unsigned long lastActionReceived        = 0;
 unsigned long observationTimeout        = 1000*60*5; // max time with no observation ongoing -> will not receive any actions from backend
 unsigned long intervalMarconiClientInit = 20000;
 int marconiInitTryCnt                   = 0;
+unsigned long actionReceiveTimeout      = 1000 * 60 * 10; // 10 min
 
 
 struct DeviceConfig {    
@@ -298,6 +300,8 @@ void watchdog(unsigned long currTime){
   if (watchDogCounter <= 0){
     Serial.println("");
     Serial.println("======= WATCHDOG =======");
+    printWatchdogStatus();
+    Serial.println("------------------------");
     Serial.println("System will reboot now!");    
     Serial.println("========================");
     Serial.println("");
@@ -306,22 +310,12 @@ void watchdog(unsigned long currTime){
   }
 
   // check all conditions
-  if ((isValueChangeTimeout()) || (gaugeValue < 0) || (!marconiSessionInitialized) || (!marconiClientInitialized) || (isObservationTimeout())){
+  if ((isActionTimeout()) || (isValueChangeTimeout()) || (gaugeValue < 0) || (!marconiSessionInitialized) || (!marconiClientInitialized) || (isObservationTimeout())){
     // watchdog activation? or was it activated already?
       if (watchDogCounter == WATCHDOG_TIMER){
         // watchdog activation, print current status
         Serial.println("============ WATCHDOG ===========");
-        Serial.println("Watchdog active, countown is running");
-        Serial.print("ValueChangeTimeout        : ");
-        Serial.println(isValueChangeTimeout());
-        Serial.print("GaugeValue                : ");
-        Serial.println(gaugeValue);
-        Serial.print("marconiClientInitialized  : ");
-        Serial.println(marconiClientInitialized);
-        Serial.print("marconiSessionInitialized : ");
-        Serial.println(marconiSessionInitialized);
-        Serial.print("observation timeout       : ");
-        Serial.println(isObservationTimeout());
+        printWatchdogStatus();
         Serial.println("================================");
       }
       watchDogCounter--;
@@ -336,6 +330,21 @@ void watchdog(unsigned long currTime){
   
 }
 
+void printWatchdogStatus(){
+  Serial.println("Watchdog active, countown is running");
+  Serial.print("ValueChangeTimeout        : ");
+  Serial.println(isValueChangeTimeout());
+  Serial.print("GaugeValue                : ");
+  Serial.println(gaugeValue);
+  Serial.print("marconiClientInitialized  : ");
+  Serial.println(marconiClientInitialized);
+  Serial.print("marconiSessionInitialized : ");
+  Serial.println(marconiSessionInitialized);
+  Serial.print("observation timeout       : ");
+  Serial.println(isObservationTimeout());
+  Serial.print("action timeout            : ");
+  Serial.println(isActionTimeout());
+}
 
 void doMarconiStuff(unsigned long currTime){
   
@@ -998,7 +1007,8 @@ void initMarconiSession() {
   if (marconiSessionInitialized) {
     return;
   }
-  Serial.println("Initializing session");    
+  Serial.println("Initializing session");  
+    
   marconiInitTryCnt++;
   marconiClient->init();
 }
@@ -1055,6 +1065,7 @@ void sendWarningLedState(){
 
 // called whenever an action is invoked
 void onAction(unsigned char actionId, char *value) {
+  lastActionReceived = millis();
   Serial.printf("Action called. Id: %x Value: %s\n", actionId, value);
   switch (actionId){
     case actionID_gaugeValue:
@@ -1151,8 +1162,14 @@ void onErr(const unsigned char error) {
    refreshGauge();
 }
 
-bool isObservationTimeout() {
+bool isObservationTimeout() { 
+ 
   return (millis() - lastObservationOngoingEventReceived > observationTimeout);
+}
+
+bool isActionTimeout(){
+  
+  return (millis() - lastActionReceived > actionReceiveTimeout);
 }
 
 bool resolveMarconiIp(){
