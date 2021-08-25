@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.40"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.42"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -373,20 +373,12 @@ void doMarconiStuff(unsigned long currTime){
   }  
 
   
-
-
-   if ((gaugeValue >=0) && (currTime - lastObservationOngoingEventReceived > 180000)) {
-         Serial.println("Connection seems to be lost. Did not received event 'Observation Ongoing'");
-         Serial.println("Gauge will be disabled by setting color to white");
-         marconiSessionInitialized = false;         
-         refreshGauge();
-   }
-   
    if (currTime - lastObservationOngoingEventReceived > observationTimeout) {
         Serial.println("Observation Timeout - System tries to init session again.");
         marconiSessionInitialized = false;  
         lastResubscribe == 0;
         refreshGauge();
+        return;
    } 
 
    
@@ -395,6 +387,17 @@ void doMarconiStuff(unsigned long currTime){
       marconiClient->subscribeForActions(onAction);    
    }   
    
+
+   if ((gaugeValue >=0) && (currTime - lastObservationOngoingEventReceived > (observationTimeout/2))) {
+         Serial.println("Connection seems to be lost. Did not received event 'Observation Ongoing'");
+         Serial.println("Gauge will be disabled by setting color to white");
+         //marconiSessionInitialized = false;         
+         gaugeValue = -1;
+         refreshGauge();
+   }
+
+   
+
    // periodically send property updates
    if (currTime - lastPropertyUpdate > propertyUpdateInterval) {    
       Serial.println("Sending Properties Update");  
