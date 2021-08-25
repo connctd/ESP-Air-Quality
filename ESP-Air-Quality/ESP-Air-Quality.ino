@@ -1085,6 +1085,9 @@ void onConnectionStateChange(const unsigned char state) {
         Serial.println("Session was Initialized");
         marconiSessionInitialized = true;
         marconiInitTryCnt = 0;
+
+        // enforce resubscription
+        lastResubscribe = 0;
         break;
       case kConnectionStateUninitialized:
         Serial.println("Session initialization ongoing");
