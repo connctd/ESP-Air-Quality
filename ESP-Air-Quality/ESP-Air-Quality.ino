@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.42"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.43"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
