@@ -361,7 +361,8 @@ void doMarconiStuff(unsigned long currTime){
       return;
    }
    
-   marconiClient->loop(); 
+   marconiClient->loop();
+   currTime = millis();
    
    if (!marconiSessionInitialized) {
       if (currTime - lastInitTry > 10000){
@@ -1094,14 +1095,15 @@ void onConnectionStateChange(const unsigned char state) {
     switch (state) {
       case kConnectionStateInitialized:
         Serial.println("Session was Initialized");
-        marconiSessionInitialized = true;
-        marconiInitTryCnt = 0;
 
         // enforce resubscription
         lastResubscribe = 0;
 
-        // prevent observation timeout
+        // prevent observation timeout right after initialization was done
         lastObservationOngoingEventReceived = millis();
+        
+        marconiSessionInitialized = true;
+        marconiInitTryCnt = 0;
         break;
       case kConnectionStateUninitialized:
         Serial.println("Session initialization ongoing");
