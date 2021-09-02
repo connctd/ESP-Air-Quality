@@ -87,7 +87,7 @@ MarconiClient *marconiClient;
 bool marconiSessionInitialized          = false;
 bool marconiClientInitialized           = false;
 unsigned long resubscribeInterval       = 60000; // in ms
-unsigned long propertyUpdateInterval    = 30000; // in ms
+unsigned long propertyUpdateInterval    = 10000; // in ms
 unsigned long lastResubscribe           = 0; // periodically resubscribe
 unsigned long lastInitTry               = 0;
 unsigned long lastPropertyUpdate        = 0; // time when property updates were sent
@@ -98,6 +98,10 @@ unsigned long observationTimeout        = 1000*60*5; // max time with no observa
 unsigned long intervalMarconiClientInit = 20000;
 int marconiInitTryCnt                   = 0;
 unsigned long actionReceiveTimeout      = 1000 * 60 * 10; // 10 min
+
+// TESTING
+float TESTINCSTEP = 1600 / NUMPIXELS;
+float TESTVALUE = 400;
 
 
 struct DeviceConfig {    
@@ -594,6 +598,8 @@ bool checkBsecState(){
 }
 
 bool sensorsAvailable(){
+   // TESTING
+  return true;
   return bme280_available || bme680_available || scd30_available;
 }
 
@@ -917,6 +923,20 @@ bool readCo2Equivalent(){
 }
 
 bool readCo2(){
+  //TESTING
+  TESTVALUE += TESTINCSTEP;
+  
+  if (TESTVALUE > 1600) {
+    TESTINCSTEP = TESTINCSTEP * -1;
+    TESTVALUE = 1600;
+  } else if (TESTVALUE < 0) {
+    TESTINCSTEP = TESTINCSTEP * -1;
+    TESTVALUE = 0;
+  }
+
+  co2 = 405+TESTVALUE;
+  return true;
+  
   if (!scd30_available){
     return false;
   }
