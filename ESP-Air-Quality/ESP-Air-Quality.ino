@@ -40,7 +40,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.46"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.51"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -192,7 +192,7 @@ void setup() {
     errorRing(ERR_EEPROM);
     ESP.restart();
   }
-
+  
   if (!loadDeviceConfig()){
     Serial.println("ERROR - Device was not flashed with Device ID and KEY!!!");
     while(true){
@@ -268,9 +268,18 @@ bool initEEProm(){
 
 void loop() {    
   checkButton(); // check wether trigger button was pressed    
-
   watchdog(millis());
-  doMarconiStuff(millis());  
+  
+  if (bme680_available) {
+    // do not do other stuff when calibrating -> high probability for calibration failure
+    if (iaq_accuracy != IAQA_NOT_CALIBRATED) {  
+      
+      doMarconiStuff(millis());  
+    } 
+  }  else {
+      doMarconiStuff(millis());  
+  }
+  
   doSensorStuff(millis());
   
   // and wait for 10ms
@@ -597,16 +606,20 @@ bool sensorsAvailable(){
 }
 
 void eraseBsecState(){
+  bool success = true;
   Serial.print("Erasing BSEC state ...");
   for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE + 1; i++) {
-      bsecStateMemory.write(i, 0xFF);
-      bsecState[i]=0xFF;
-  }
-  if(bsecStateMemory.commit()){
+      bsecStateMemory.write(i, 0xFF);      
+        success = success && bsecStateMemory.commit();
+        bsecState[i]=0xFF;      
+  }    
+  if(success){
     Serial.println("OK");
   } else {
     Serial.println("Error");
   }
+  
+  printBsecState();
 }
 
 bool loadBsecState(){
@@ -734,6 +747,7 @@ void handleIaqCalibrationEvent(){
   }
   lastPropertyUpdate = 0;
   clearRing();
+  setGaugePercentage(gaugeValue);
   refreshGauge();
 }
 
@@ -776,11 +790,12 @@ bool initSCD30(){
   bool res = scd30.begin();
   if (res) {
     Serial.println("OK");
+    printScd30Configuration();  
   } else {
     Serial.println("ERROR");
     Serial.println("No SCD30 sensor found on I2C wire");
   }
-  printScd30Configuration();  
+  
   return res;
 }
 
@@ -832,10 +847,11 @@ bool readTemperature(){
     newTemperature = bme280.readTemperature();  // use 0.5 steps for temperature  
   } else if (scd30_available){
     newTemperature = scd30.temperature;  // use 0.5 steps for temperature  
+    // adding the offset - this is only needed for connctd FRAME setup to compensate ESP32 heat
+    newTemperature += TEMPERATURE_OFFSET;
   } 
 
-  // adding the offset - this is only needed for connctd FRAME setup to compensate ESP32 heat
-  newTemperature += TEMPERATURE_OFFSET;
+
   
   if (temperature != newTemperature){
     lastValueChange = millis();
@@ -1316,7 +1332,7 @@ int getScaleValue(int value){
 void triggerNotCalibratedAnimation(){ 
   clearRing();
   notCalibratedAnimationState++;
-  if (notCalibratedAnimationState > NUMPIXELS) {
+  if (notCalibratedAnimationState > (NUMPIXELS-1)) {
     notCalibratedAnimationState = -1 * (NUMPIXELS-1);
   }
   if (notCalibratedAnimationState > 0) {
