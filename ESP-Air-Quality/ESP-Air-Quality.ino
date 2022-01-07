@@ -37,10 +37,11 @@
 #include <Adafruit_Sensor.h>  // https://github.com/adafruit/Adafruit_Sensor              common library for arduino sensors
 #include <Adafruit_BME280.h>  // https://github.com/adafruit/Adafruit_BME280_Library      library to work with BME280 sensors
 #include <Adafruit_SCD30.h>   // https://github.com/adafruit/Adafruit_SCD30               library for SCD30 CO2 sensor
+#include <sps30.h>
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.52"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.55"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -65,15 +66,25 @@ int notCalibratedAnimationState            = 0;
 unsigned long lastCalibrationAnimationStep = 0;
 
 // +++++++++++++++++++++++ Connctd +++++++++++++++++++++
+
 #define DEVICE_CONFIG_MEMORY_SIZE 0xFF
 
-#define property_gauge       0x01
-#define property_co2         0x02
-#define property_temperature 0x03
-#define property_humidity    0x04
-#define property_dimmlevel   0x05
-#define property_pressure    0x06
-#define property_indicator   0x07
+#define property_gauge         0x01
+#define property_co2           0x02
+#define property_temperature   0x03
+#define property_humidity      0x04
+#define property_dimmlevel     0x05
+#define property_pressure      0x06
+#define property_indicator     0x07
+#define property_particle_1pm  0x08
+#define property_particle_2pm5 0x09
+#define property_particle_4pm  0x10
+#define property_particle_10pm 0x11
+#define property_particle_1nc  0x12
+#define property_particle_2nc5 0x13
+#define property_particle_4nc  0x14
+#define property_particle_10nc 0x15
+
 
 #define actionID_gaugeValue  0x01
 #define actionID_dimmLevel   0x05
@@ -152,6 +163,8 @@ int co2           = 0;
 bool bme280_available = false;
 bool bme680_available = false;
 bool scd30_available  = false;
+bool sps30_available = false;
+
 Adafruit_SCD30  scd30;
 Adafruit_BME280 bme280; 
 Bsec iaqSensor;
@@ -164,6 +177,8 @@ unsigned long bsecStateUpdateInterval = 60*60*1000; // every 60min
 unsigned long lastBsecUpdate          = 0;
 unsigned long lastValueChange = 0;
 unsigned long valueChangeTimeout = 1000*60*10; // 10 min
+
+struct sps30_measurement m;
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
@@ -216,10 +231,15 @@ void setup() {
 }
 
 void initSensors(){
+  sps30_available = initSPS30();
+  delay(1000);
   bme680_available = initBME680();
+  delay(1000);
   bme280_available = initBME280();   
+  delay(1000);
   scd30_available  = initSCD30();
-
+  delay(1000);
+  
   sensorInfo();
 }
 
@@ -227,6 +247,7 @@ void initWarningLed(){
   pinMode(WARNING_PIN, OUTPUT);
   digitalWrite(WARNING_PIN,false);
 }
+
 
 void initTriggerButton(){
     pinMode(TRIGGER_PIN, INPUT);
@@ -361,9 +382,10 @@ void doMarconiStuff(unsigned long currTime){
    if (!marconiClientInitialized){     
       if (currTime - lastMarconiClientInitTry > intervalMarconiClientInit){
         if (!initMarconi() && (marconiInitTryCnt >= 3)){              
-          errorRing(ERR_NO_MARCONI_CLIENT);                       
+          errorRing(ERR_NO_MARCONI_CLIENT);  // this is confusing for the user
         }
-        if (!initMarconi() && (marconiInitTryCnt >= 10)){                        
+        if (!initMarconi() && (marconiInitTryCnt >= 10)){ 
+          errorRing(ERR_NO_MARCONI_CLIENT);                       
           ESP.restart();     
         }
       }
@@ -381,10 +403,11 @@ void doMarconiStuff(unsigned long currTime){
           Serial.print("Unable to initialize Session. Try ");
           Serial.print(marconiInitTryCnt);
           Serial.println("/10");
-          errorRing(ERR_MARCONI_SESSION);          
+          errorRing(ERR_MARCONI_SESSION); // this is confusing for the user
         }
         if (marconiInitTryCnt >= 10){  
           Serial.println("Unable to initialize Session, System will reboot now");        
+          errorRing(ERR_MARCONI_SESSION);          
            ESP.restart();  
         }
       }
@@ -423,16 +446,25 @@ void doMarconiStuff(unsigned long currTime){
       lastPropertyUpdate = currTime;
       sendGaugeDimmLevelValue();
       sendWarningLedState();
-      if (sensorsAvailable()) {              
-        Serial.println("Reading property values");
+      if (sensorsAvailable()) {        
+        if (scd30_available){
+          if (scd30.dataReady()){
+            if (!scd30.read()){ 
+              Serial.println("Error reading SCD30 data"); 
+            }
+          }
+        }              
         readTemperature();
         readHumidity();
-        readPressure();
+        readPressure();       
         Serial.println("Sending property values");
         sendTemperatureValue();       
         sendHumidityValue();       
-        sendPressureValue();
-                
+        sendPressureValue();        
+        if (sps30_available){
+          readParticles();  
+          sendParticleValues();
+        }                
         if (readCo2()){
           sendCo2Value();
         } else {
@@ -448,6 +480,11 @@ void doMarconiStuff(unsigned long currTime){
 void doSensorStuff(unsigned long currTime){  
   // BME680/BSEC stuff
   if (bme680_available){         
+    if (!checkIaqSensorStatus()) {
+      evalIaqSensorStatus();
+      
+      
+    }
      if (periodicallyBsecSave) {     
         if (currTime - lastBsecUpdate > bsecStateUpdateInterval){
           saveBsecState();
@@ -478,13 +515,7 @@ void doSensorStuff(unsigned long currTime){
   }
 
   
-  if (scd30_available){
-    if (scd30.dataReady()){
-      if (!scd30.read()){ 
-        Serial.println("Error reading SCD30 data"); 
-       }
-    }
-  }
+  
 }
 
 
@@ -543,6 +574,41 @@ void setWarningLed(bool state){
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                    Sensoring
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+// ++++++++++++++++++++++++++++++++++++ SPS30 +++++++++++++++++++++++++++++++++++
+
+
+bool initSPS30(){
+   int16_t ret;
+    sensirion_i2c_init();
+    int cnt = 0;
+    Serial.print("Initializing SPS30 .... ");
+    while (sps30_probe() != 0) {
+     // Serial.print("SPS sensor probing failed\n");
+      delay(500);
+      cnt++;
+      if (cnt > 2){
+        Serial.println("ERROR - SPS sensor probing failed");
+        return false;
+      }
+    }
+    Serial.println("OK");
+   
+   ret = sps30_set_fan_auto_cleaning_interval_days(4);
+    if (ret) {
+      Serial.print("ERROR, unable to set the auto-clean interval: ");
+      Serial.println(ret);
+      return false;
+    }  
+
+    // start measuring
+  ret = sps30_start_measurement();
+  if (ret < 0) {
+    Serial.println("ERROR, starting measurement\n");    
+  }
+
+  return true;
+}
 
 // +++++++++++++++++++++++++++++++ BME680 / BSEC ++++++++++++++++++++++++++++++++
 
@@ -603,7 +669,7 @@ bool checkBsecState(){
 }
 
 bool sensorsAvailable(){
-  return bme280_available || bme680_available || scd30_available;
+  return bme280_available || bme680_available || scd30_available || sps30_available;
 }
 
 void eraseBsecState(){
@@ -792,6 +858,7 @@ bool initSCD30(){
   if (res) {
     Serial.println("OK");
     printScd30Configuration();  
+    
   } else {
     Serial.println("ERROR");
     Serial.println("No SCD30 sensor found on I2C wire");
@@ -832,6 +899,54 @@ bool isValueChangeTimeout(){
     return false;
   }
   return (millis() - lastValueChange > valueChangeTimeout);
+}
+
+bool readParticles(){
+  char serial[SPS30_MAX_SERIAL_LEN];
+  uint16_t data_ready;
+  int16_t ret;
+  Serial.println("Reading particle values");
+  ret = sps30_read_data_ready(&data_ready);
+  if (ret < 0) {
+      Serial.print("error reading data-ready flag: ");
+      Serial.println(ret);
+      return false;
+  };
+    
+  if (!data_ready){
+    Serial.println("SPS30 data not ready yet");
+    return false;
+  }
+   
+  // data ready
+  ret = sps30_read_measurement(&m);
+  if (ret < 0) {
+    Serial.print("error reading measurement\n");
+    return false;
+  } 
+
+    Serial.print("PM  1.0: ");
+    Serial.println(m.mc_1p0);
+    Serial.print("PM  2.5: ");
+    Serial.println(m.mc_2p5);
+    Serial.print("PM  4.0: ");
+    Serial.println(m.mc_4p0);
+    Serial.print("PM 10.0: ");
+    Serial.println(m.mc_10p0);
+    Serial.print("NC  0.5: ");
+    Serial.println(m.nc_0p5);
+    Serial.print("NC  1.0: ");
+    Serial.println(m.nc_1p0);
+    Serial.print("NC  2.5: ");
+    Serial.println(m.nc_2p5);
+    Serial.print("NC  4.0: ");
+    Serial.println(m.nc_4p0);
+    Serial.print("NC 10.0: ");
+    Serial.println(m.nc_10p0);
+
+    Serial.print("Typical partical size: ");
+    Serial.println(m.typical_particle_size);
+  return true;
 }
 
 bool readTemperature(){  
@@ -1058,6 +1173,20 @@ void sendCo2Value(){
     return;
   }
  marconiClient->sendFloatPropertyUpdate(property_co2, co2);
+}
+
+void sendParticleValues(){
+   if (!marconiSessionInitialized){
+    return;
+  }
+  marconiClient->sendFloatPropertyUpdate(property_particle_1pm   , m.mc_1p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_2pm5  , m.mc_2p5);
+  marconiClient->sendFloatPropertyUpdate(property_particle_4pm   , m.mc_4p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_10pm  , m.mc_10p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_1nc   , m.nc_1p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_2nc5  , m.nc_2p5);
+  marconiClient->sendFloatPropertyUpdate(property_particle_4nc   , m.nc_4p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_10nc  , m.nc_10p0);
 }
 
 void sendGaugeDimmLevelValue(){
@@ -1364,6 +1493,11 @@ void sensorInfo(){
     leds[2] = CRGB(0,255,0);   
   } else {
     leds[2] = CRGB(255,255,255);   
+  }
+  if (sps30_available) {
+    leds[3] = CRGB(0,255,0);   
+  } else {
+    leds[3] = CRGB(255,255,255);   
   }
 
   FastLED.show();

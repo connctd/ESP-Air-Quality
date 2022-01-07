@@ -4,13 +4,14 @@
 
 After the system has been  powered up it tries to establish a connection with the WLAN. If a connection could be established, the entire LED ring flashes green. If this was not possible, for example because no WiFi has been configured yet, the LED RING lights up blue permanently and the System awaits to setup Wifi credentials (See setting up Wifi)
 
-Afterwards, the sensor configuration is shown by the first 3 LEDs of the LED ring:
+Afterwards, the sensor configuration is shown by the first 4 LEDs of the LED ring:
 
 - First LED green, SCD30 installed and ready, otherwise white.
 - Second LED green, BME680 installed and ready, otherwise white
 - Third LED green, BME280 installed and ready, otherwise white
+- Fourth LED green, SPS30 installed and ready, otherwise white
 
-If all 3 LEDs are white, no sensor is installed.
+If all 4 LEDs are white, no sensor is installed.
 
 If the BME680 sensor is installed, it must first be adjusted so that usable values can be measured. This process can take up to 10min at the first start. If the calibration was completed successfully, it will not take so much time in the future. 
 
@@ -44,6 +45,7 @@ Open the Board Management and search for ```esp32```. Choose the version ```1.0.
 | Adafruit SCD30		  |	1.0.7		   | https://github.com/adafruit/Adafruit_SCD30 |
 | Bosh Sensortec          | 1.6.1480       | https://github.com/BoschSensortec/BSEC-Arduino-library |
 | connctd Marconi         |                | https://github.com/connctd/marconi-lib |
+| Sensirion SPS30		  | 1.0.0          | https://github.com/Sensirion/arduino-sps |
 
 # Error Handling
 
@@ -60,7 +62,7 @@ In general, a complete red blinking LED-ring idicates connection or general syst
 | white    | Error not further specified |
 | blue     | Error has to do with Wifi Connection|
 | orange   | Maroni Client could not be initialized. IP address could not resolved from URL or kind like that. |
-| violette | Marconi Session could not be establihed |
+| violette | Marconi Session could not be established. |
 | red      | EEPROM failure |
 
 
