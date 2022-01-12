@@ -616,14 +616,20 @@ bool initBME680(){
   Serial.print("Initializing BME680 ... ");  
   //iaqSensor.begin(BME680_I2C_ADDR_SECONDARY,Wire);  
 
+  int address = 0x76;
   // check for address 0x77 
-   Wire.beginTransmission(0x77);
+  
+   Wire.beginTransmission(address);
    if(Wire.endTransmission()!=0){ 
-      Serial.println("ERROR");
-      return false;
+      address = 0x77;
+      Wire.beginTransmission(address);
+      if(Wire.endTransmission()!=0){ 
+        Serial.println("ERROR");
+        return false;
+      }
    }
   
-  iaqSensor.begin(0x77,Wire);  
+  iaqSensor.begin(address,Wire);  
   if (!checkIaqSensorStatus()){
     Serial.println("ERROR");
     evalIaqSensorStatus();
