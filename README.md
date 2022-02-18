@@ -1,4 +1,4 @@
-# ESP-Air-Quality
+# AirLytics Frame ESP
 
 ## Starting Sequence
 
