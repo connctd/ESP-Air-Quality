@@ -2,10 +2,15 @@
 /*
  * 
  *  ----------------------------------------------------------------------------------------------------------------------
- *                          _   ___ ___    ___  _   _  _   _    ___ _______   __  ___ ___ ___ 
- *                         /_\ |_ _| _ \  / _ \| | | |/_\ | |  |_ _|_   _\ \ / / | __/ __| _ \
- *                        / _ \ | ||   / | (_) | |_| / _ \| |__ | |  | |  \ V /  | _|\__ \  _/
- *                       /_/ \_\___|_|_\  \__\_\\___/_/ \_\____|___| |_|   |_|   |___|___/_|                   IoT connctd 
+ *          
+ *                 _      _           _   _            ______                                   ______  _____ _____  
+ *           /\   (_)    | |         | | (_)          |  ____|                                 |  ____|/ ____|  __ \ 
+ *          /  \   _ _ __| |    _   _| |_ _  ___ ___  | |__ _ __ __ _ _ __ ___   ___   ______  | |__  | (___ | |__) |
+ *         / /\ \ | | '__| |   | | | | __| |/ __/ __| |  __| '__/ _` | '_ ` _ \ / _ \ |______| |  __|  \___ \|  ___/ 
+ *        / ____ \| | |  | |___| |_| | |_| | (__\__ \ | |  | | | (_| | | | | | |  __/          | |____ ____) | |     
+ *       /_/    \_\_|_|  |______\__, |\__|_|\___|___/ |_|  |_|  \__,_|_| |_| |_|\___|          |______|_____/|_|     
+ *                               __/ |                                                                               
+ *                              |___/                                                                          IoT connctd 
  *  ----------------------------------------------------------------------------------------------------------------------                          
  *                                                                                                            
  * 
@@ -39,9 +44,9 @@
 #include <Adafruit_SCD30.h>   // https://github.com/adafruit/Adafruit_SCD30               library for SCD30 CO2 sensor
 #include <sps30.h>
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
+#include "gauge.h"
 
-
-#define VERSION "1.0.55"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.56"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -191,7 +196,7 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);   
   Serial.println("\n Starting");
-  Serial.print("Air Quality - ESP v");
+  Serial.print("AirLytics - ESP v");
   Serial.println(VERSION);
   
   Wire.begin();
@@ -325,7 +330,7 @@ void watchdog(unsigned long currTime){
 
   if (currTime - lastWatchdogCheck < watchdogInterval){
     return;
-  }
+  } 
   lastWatchdogCheck = currTime;
   if (watchDogCounter <= 0){
     Serial.println("");
