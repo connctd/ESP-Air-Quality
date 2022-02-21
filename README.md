@@ -11,7 +11,7 @@ Afterwards, the sensor configuration is shown by the first 4 LEDs of the LED rin
 - Third LED green, BME280 installed and ready, otherwise white
 - Fourth LED green, SPS30 installed and ready, otherwise white
 
-If all 4 LEDs are white, no sensor is installed.
+If all 4 LEDs are white, no sensor is installed or was found.
 
 If the BME680 sensor is installed, it must first be adjusted so that usable values can be measured. This process can take up to 10min at the first start. If the calibration was completed successfully, it will not take so much time in the future. 
 
@@ -19,12 +19,12 @@ The same applies to the temperature values; these sensors generally need up to 1
 
 ## Setting Up the WiFi
 
-When the system starts and cannot connect to the WLAN, it automatically goes into configuration mode, recognizable by a blue LED ring. You can also start the configuration mode manually by pressing and holding the button on the back until the LED ring lights up green (5s). Then connect the smartphone (or PC) to the Network with the SSID "Air-Quality". You will be prompted to "Register to network". Follow this prompt and you will get to the configuration menu. Select the network from the list and enter the password, then press "Save". The system restarts and tries to log in to the network. If this is successful, the LED ring flashes green, otherwise the network configuration starts and the steps must be repeated.
+When the system starts and cannot connect to the WLAN, it automatically goes into its WLAN configuration mode, recognizable by a blue LED ring. You can also start the configuration mode manually by pressing and holding the button on the back until the LED ring lights up green (5s). Then connect the smartphone (or PC) to the Network with the SSID "AirLytics Frame". You will be prompted to "Register to network". Follow this prompt and you will get to the configuration menu. Select the network from the list and enter the password, then press "Save". The system restarts and tries to log in to the network. If this is successful, the LED ring flashes green, otherwise the network configuration starts and the steps must be repeated.
 
 ## Factory Reset
 In order to reset the device to it's factory settings, the button on the back must be pressed for at least 15s. 
 
-After 5s the LED ring will light up green, after 12s it will light up red. After 15s it will blink red and the device will does a factory reset. This will delete the network settings and the EEProm settings like the BME680 calibration data. 
+After 5s the LED ring will light up green, after 12s it will light up red. After 15s it will blink red and the device will perform a factory reset. This will delete the network settings and the sensor settings like calibration data. 
 
 # Dependencies 
 
