@@ -44,15 +44,15 @@
 #include <Adafruit_SCD30.h>   // https://github.com/adafruit/Adafruit_SCD30               library for SCD30 CO2 sensor
 #include <sps30.h>
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
-#include "gauge.h"
 
-#define VERSION "1.0.56"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+
+#define VERSION "1.0.57"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
 WiFiManager wm;   
 WiFiManagerParameter custom_field; 
-const char* AP_SSID = "Air-Quality";
+const char* AP_SSID = "AirLytics Frame";
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
 #define LED_PIN   25
 #define NUMPIXELS 13
@@ -175,13 +175,13 @@ Adafruit_BME280 bme280;
 Bsec iaqSensor;
 int iaq_accuracy = IAQA_NOT_CALIBRATED;
 
-EEPROMClass  bsecStateMemory("bsecState", BSEC_MAX_STATE_BLOB_SIZE+1);
+EEPROMClass  bsecStateMemory("bsecState", BSEC_MAX_STATE_BLOB_SIZE+1);  // status of BSEC library coul be stored in EEPROM when SCD30 was calibrated
 uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
 bool periodicallyBsecSave             = false; // periodically save the bsec state to EEPROM? will be addionally saved whenever bsec_accuracy switches to 1 or 3; 
 unsigned long bsecStateUpdateInterval = 60*60*1000; // every 60min
 unsigned long lastBsecUpdate          = 0;
-unsigned long lastValueChange = 0;
-unsigned long valueChangeTimeout = 1000*60*10; // 10 min
+unsigned long lastValueChange         = 0;
+unsigned long valueChangeTimeout      = 1000*60*10; // 10 min
 
 struct sps30_measurement m;
 
@@ -230,6 +230,8 @@ void setup() {
   }
  
   marconiClientInitialized = initMarconi();
+
+  // try to 
   initSensors();
  
   refreshGauge();  
@@ -293,20 +295,19 @@ bool initEEProm(){
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 void loop() {    
-  checkButton(); // check wether trigger button was pressed    
-  watchdog(millis());
+  checkButton();        // check wether trigger button was pressed    
+  watchdog(millis());   // trigger the watchdog routine
   
   if (bme680_available) {
     // do not do other stuff when calibrating -> high probability for calibration failure
-    if (iaq_accuracy != IAQA_NOT_CALIBRATED) {  
-      
-      doMarconiStuff(millis());  
+    if (iaq_accuracy != IAQA_NOT_CALIBRATED) {        
+      doMarconiStuff(millis());  // communication stuff with connctd library
     } 
   }  else {
-      doMarconiStuff(millis());  
+      doMarconiStuff(millis());  // communication stuff with connctd library
   }
   
-  doSensorStuff(millis());
+  doSensorStuff(millis());  // read sensor values
   
   // and wait for 10ms
   delay(10);
@@ -327,11 +328,14 @@ void watchdog(unsigned long currTime){
     return;
   }
 
-
+  // when there is nothing to check, return
   if (currTime - lastWatchdogCheck < watchdogInterval){
     return;
   } 
+
+  // time to check conditions again
   lastWatchdogCheck = currTime;
+  // when watchdog is active and time is up, restart everything
   if (watchDogCounter <= 0){
     Serial.println("");
     Serial.println("======= WATCHDOG =======");
@@ -344,7 +348,7 @@ void watchdog(unsigned long currTime){
     ESP.restart();
   }
 
-  // check all conditions
+  // check all conditions. either start or stop the watchdog
   if ((isActionTimeout()) || (isValueChangeTimeout()) || (gaugeValue < 0) || (!marconiSessionInitialized) || (!marconiClientInitialized) || (isObservationTimeout())){
     // watchdog activation? or was it activated already?
       if (watchDogCounter == WATCHDOG_TIMER){
@@ -381,6 +385,7 @@ void printWatchdogStatus(){
   Serial.println(isActionTimeout());
 }
 
+// Do everything that is needed for the communication with the connctd backend
 void doMarconiStuff(unsigned long currTime){
   
    // check if client is initialized
