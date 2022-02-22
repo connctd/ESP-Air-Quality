@@ -22,3 +22,6 @@
 [submodule "AirLyticsFrame_ESP/libraries/arduino-sps"]
 	path = AirLyticsFrame_ESP/libraries/arduino-sps
 	url = https://github.com/Sensirion/arduino-sps.git
+[submodule "AirLyticsFrame_ESP/libraries/Crypto"]
+	path = AirLyticsFrame_ESP/libraries/Crypto
+	url = https://github.com/OperatorFoundation/Crypto.git
