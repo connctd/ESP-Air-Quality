@@ -1,0 +1,3 @@
+[submodule "AirLyticsFrame_ESP/libraries/WiFiManager"]
+	path = AirLyticsFrame_ESP/libraries/WiFiManager
+	url = https://github.com/tzapu/WiFiManager.git
