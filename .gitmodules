@@ -1,0 +1,33 @@
+[submodule "AirLyticsFrame_ESP/libraries/WiFiManager"]
+	path = AirLyticsFrame_ESP/libraries/WiFiManager
+	url = https://github.com/tzapu/WiFiManager.git
+[submodule "AirLyticsFrame_ESP/libraries/FastLED"]
+	path = AirLyticsFrame_ESP/libraries/FastLED
+	url = https://github.com/FastLED/FastLED.git
+[submodule "AirLyticsFrame_ESP/libraries/Adafruit_Sensor"]
+	path = AirLyticsFrame_ESP/libraries/Adafruit_Sensor
+	url = https://github.com/adafruit/Adafruit_Sensor.git
+[submodule "AirLyticsFrame_ESP/libraries/Adafruit_BME280_Library"]
+	path = AirLyticsFrame_ESP/libraries/Adafruit_BME280_Library
+	url = https://github.com/adafruit/Adafruit_BME280_Library.git
+[submodule "AirLyticsFrame_ESP/libraries/Adafruit_SCD30"]
+	path = AirLyticsFrame_ESP/libraries/Adafruit_SCD30
+	url = https://github.com/adafruit/Adafruit_SCD30.git
+[submodule "AirLyticsFrame_ESP/libraries/BSEC-Arduino-library"]
+	path = AirLyticsFrame_ESP/libraries/BSEC-Arduino-library
+	url = https://github.com/BoschSensortec/BSEC-Arduino-library.git
+[submodule "AirLyticsFrame_ESP/libraries/marconi-lib"]
+	path = AirLyticsFrame_ESP/libraries/marconi-lib
+	url = git@github.com:connctd/marconi-lib.git
+[submodule "AirLyticsFrame_ESP/libraries/arduino-sps"]
+	path = AirLyticsFrame_ESP/libraries/arduino-sps
+	url = https://github.com/Sensirion/arduino-sps.git
+[submodule "AirLyticsFrame_ESP/libraries/Crypto"]
+	path = AirLyticsFrame_ESP/libraries/Crypto
+	url = https://github.com/OperatorFoundation/Crypto.git
+[submodule "AirLyticsFrame_ESP/libraries/ESP-CoAP"]
+	path = AirLyticsFrame_ESP/libraries/ESP-CoAP
+	url = https://github.com/connctd/ESP-CoAP.git
+[submodule "AirLyticsFrame_ESP/libraries/Adafruit_BusIO"]
+	path = AirLyticsFrame_ESP/libraries/Adafruit_BusIO
+	url = https://github.com/adafruit/Adafruit_BusIO.git
