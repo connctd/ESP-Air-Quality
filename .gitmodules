@@ -28,3 +28,6 @@
 [submodule "AirLyticsFrame_ESP/libraries/ESP-CoAP"]
 	path = AirLyticsFrame_ESP/libraries/ESP-CoAP
 	url = https://github.com/connctd/ESP-CoAP.git
+[submodule "AirLyticsFrame_ESP/libraries/Adafruit_BusIO"]
+	path = AirLyticsFrame_ESP/libraries/Adafruit_BusIO
+	url = https://github.com/adafruit/Adafruit_BusIO.git
