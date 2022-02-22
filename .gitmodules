@@ -13,3 +13,6 @@
 [submodule "AirLyticsFrame_ESP/libraries/Adafruit_SCD30"]
 	path = AirLyticsFrame_ESP/libraries/Adafruit_SCD30
 	url = https://github.com/adafruit/Adafruit_SCD30.git
+[submodule "AirLyticsFrame_ESP/libraries/BSEC-Arduino-library"]
+	path = AirLyticsFrame_ESP/libraries/BSEC-Arduino-library
+	url = https://github.com/BoschSensortec/BSEC-Arduino-library.git
