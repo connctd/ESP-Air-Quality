@@ -10,3 +10,6 @@
 [submodule "AirLyticsFrame_ESP/libraries/Adafruit_BME280_Library"]
 	path = AirLyticsFrame_ESP/libraries/Adafruit_BME280_Library
 	url = https://github.com/adafruit/Adafruit_BME280_Library.git
+[submodule "AirLyticsFrame_ESP/libraries/Adafruit_SCD30"]
+	path = AirLyticsFrame_ESP/libraries/Adafruit_SCD30
+	url = https://github.com/adafruit/Adafruit_SCD30.git
