@@ -30,6 +30,8 @@
  *                         └ Gauge / LED-Ring / Warning LED 
  * 
  * 
+ * 
+ * 
  */
 
 
@@ -46,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.57"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.59"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -70,7 +72,7 @@ float dimmLevel      = 1.0F;  // value between 0 (off) and 1 (full brightness)
 int notCalibratedAnimationState            = 0;
 unsigned long lastCalibrationAnimationStep = 0;
 
-// +++++++++++++++++++++++ Connctd +++++++++++++++++++++
+// +++++++++++++++++++++ CONNCTD Communication +++++++++++++++++++++
 
 #define DEVICE_CONFIG_MEMORY_SIZE 0xFF
 
@@ -246,7 +248,7 @@ void initSensors(){
   delay(1000);
   scd30_available  = initSCD30();
   delay(1000);
-  
+  // show status about sensors that have been found  
   sensorInfo();
 }
 
@@ -261,8 +263,8 @@ void initTriggerButton(){
 }
 
 void initializeRandomSeed(){
-    //srand(ESP8266TrueRandom.random());
-     srand (analogRead(0));
+    //srand(ESP8266TrueRandom.random()); ‚
+     srand (analogRead(0));  // this one will not work on ESP8266!!
 }
 
 void initializeLedRing(){
@@ -561,24 +563,6 @@ void resetToFactorySettings(){
    Serial.println("Deleting Wifi Settings");
    wm.resetSettings();   
    eraseBsecState();
-}
-
-void setWarningLed(bool state){
-   if (warningLedOn == state){
-    return;
-   }   
-   warningLedOn = state;
-   Serial.print("Turning Warning LED ");
-   if (warningLedOn){
-      Serial.println("ON");
-   } else {
-    Serial.println("OFF");
-   }
-   if (warningLedOn){
-      blinkWarningLed();
-   }
-   digitalWrite(WARNING_PIN,warningLedOn);
-   sendWarningLedState();
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -1652,4 +1636,22 @@ void blinkWarningLed(){
     digitalWrite(WARNING_PIN,false);
     delay(100);
   }
+}
+
+void setWarningLed(bool state){
+   if (warningLedOn == state){
+    return;
+   }   
+   warningLedOn = state;
+   Serial.print("Turning Warning LED ");
+   if (warningLedOn){
+      Serial.println("ON");
+   } else {
+    Serial.println("OFF");
+   }
+   if (warningLedOn){
+      blinkWarningLed();
+   }
+   digitalWrite(WARNING_PIN,warningLedOn);
+   sendWarningLedState();
 }
