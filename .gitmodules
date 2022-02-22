@@ -25,3 +25,6 @@
 [submodule "AirLyticsFrame_ESP/libraries/Crypto"]
 	path = AirLyticsFrame_ESP/libraries/Crypto
 	url = https://github.com/OperatorFoundation/Crypto.git
+[submodule "AirLyticsFrame_ESP/libraries/ESP-CoAP"]
+	path = AirLyticsFrame_ESP/libraries/ESP-CoAP
+	url = https://github.com/connctd/ESP-CoAP.git
