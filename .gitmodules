@@ -16,3 +16,6 @@
 [submodule "AirLyticsFrame_ESP/libraries/BSEC-Arduino-library"]
 	path = AirLyticsFrame_ESP/libraries/BSEC-Arduino-library
 	url = https://github.com/BoschSensortec/BSEC-Arduino-library.git
+[submodule "AirLyticsFrame_ESP/libraries/marconi-lib"]
+	path = AirLyticsFrame_ESP/libraries/marconi-lib
+	url = git@github.com:connctd/marconi-lib.git
