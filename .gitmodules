@@ -7,3 +7,6 @@
 [submodule "AirLyticsFrame_ESP/libraries/Adafruit_Sensor"]
 	path = AirLyticsFrame_ESP/libraries/Adafruit_Sensor
 	url = https://github.com/adafruit/Adafruit_Sensor.git
+[submodule "AirLyticsFrame_ESP/libraries/Adafruit_BME280_Library"]
+	path = AirLyticsFrame_ESP/libraries/Adafruit_BME280_Library
+	url = https://github.com/adafruit/Adafruit_BME280_Library.git
