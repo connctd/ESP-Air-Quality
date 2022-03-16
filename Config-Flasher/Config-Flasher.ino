@@ -42,12 +42,10 @@ void setup() {
   Serial.println("generating DeviceConfig object");
   delay(1000);
 
-
- 
- deviceConfig = (DeviceConfig){ "<place device id here>", {}};
- 
-// In order to generate your device key, take the device secret and convert it to base64 hex.
-// use this tool https://cryptii.com/pipes/base64-to-hex
+  //deviceConfig = (DeviceConfig){ "<device id>", {<device secret in hex bytes>}}; 
+  
+  // In order to generate your device key, take the device secret and convert it to base64 hex.
+  // This could be done with the help of this tool https://cryptii.com/pipes/base64-to-hex
 
   Serial.println("DeviceConfig generated");
   Serial.print("DeviceID = ");
