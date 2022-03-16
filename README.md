@@ -1,4 +1,4 @@
-# AirLytics Frame ESP
+# Airlytics Frame Manual
 
 ## Starting Sequence
 
@@ -25,27 +25,6 @@ When the system starts and cannot connect to the WLAN, it automatically goes int
 In order to reset the device to it's factory settings, the button on the back must be pressed for at least 15s. 
 
 After 5s the LED ring will light up green, after 12s it will light up red. After 15s it will blink red and the device will perform a factory reset. This will delete the network settings and the sensor settings like calibration data. 
-
-# Dependencies 
-
-## Board Management
-
-In order to install ESP32 extension to the Arduino IDE, add the line ```https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json``` to the additional board manager URL in the Arduino Settings. 
-
-Open the Board Management and search for ```esp32```. Choose the version ```1.0.6``` developed by Espressif Systems and hit install. 
-
-## Libraries
-
-| library                 | version        | link |
-|:----------------------- |:-------------- | :-------------------|
-| Wifi Manager            | 2.0.3-alpha    | https://github.com/tzapu/WiFiManager |
-| Fast LED                | 3.4.0          | https://github.com/FastLED/FastLED |
-| Adafruit Unified Sensor | 1.1.4          | https://github.com/adafruit/Adafruit_Sensor |
-| Adafruit BME280         | 2.1.3          | https://github.com/adafruit/Adafruit_BME280_Library|
-| Adafruit SCD30		  |	1.0.7		   | https://github.com/adafruit/Adafruit_SCD30 |
-| Bosh Sensortec          | 1.6.1480       | https://github.com/BoschSensortec/BSEC-Arduino-library |
-| connctd Marconi         |                | https://github.com/connctd/marconi-lib |
-| Sensirion SPS30		  | 1.0.0          | https://github.com/Sensirion/arduino-sps |
 
 # Error Handling
 
@@ -78,7 +57,40 @@ In contrast to the red blinking LED-ring, a half blinking LED-ring indicates err
 | violette | Error BSEC library |
 
 
-## ESP compiler error
+
+# Airlytics Frame Development
+
+This section explains the development of the Airlytics firmware for an ESP32 with the Arduino IDE.   
+
+## Board Management
+
+In order to install ESP32 extension to the Arduino IDE, add the line ```https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json``` to the additional board manager URL in the Arduino Settings. 
+
+Open the Board Management and search for ```esp32```. Choose the version ```1.0.6``` developed by Espressif Systems and hit install. 
+
+## Libraries
+
+All libraries (except connctd Marconi) could be installed via the Library Management of Arduino IDE. In the menu bar go to ```Tools->Manage Libraries...``` and install the libraries below: 
+
+| library                 | version        | link |
+|:----------------------- |:-------------- | :-------------------|
+| Wifi Manager            | 2.0.3-alpha    | https://github.com/tzapu/WiFiManager |
+| Fast LED                | 3.4.0          | https://github.com/FastLED/FastLED |
+| Adafruit Unified Sensor | 1.1.4          | https://github.com/adafruit/Adafruit_Sensor |
+| Adafruit BME280         | 2.1.3          | https://github.com/adafruit/Adafruit_BME280_Library|
+| Adafruit SCD30          | 1.0.7          | https://github.com/adafruit/Adafruit_SCD30 |
+| Bosh Sensortec          | 1.6.1480       | https://github.com/BoschSensortec/BSEC-Arduino-library |
+| connctd Marconi         |                | https://github.com/connctd/marconi-lib |
+| Sensirion SPS30         | 1.0.0          | https://github.com/Sensirion/arduino-sps |
+
+### Installing connctd Marconi library
+
+If you do not have git installed on your machine, please open the browser and and go to the [github page](https://github.com/connctd/marconi-lib). Press on ```Code``` and download the ZIP file. Extract the content to your Arduino libraries folder and restart Arduino IDE again. The macroni library shall now be available. 
+
+If you have git installed, navigate to your Arduino IDE libraries folder and run the following command ```git clone https://github.com/connctd/marconi-lib```
+
+
+## ESP specific compiler error
 
 For MacOS, go to folder `~/Library/Arduino15/packages/esp32/hardware/esp32/1.0.6` and open `platform.txt`. Search for line
 
@@ -91,3 +103,21 @@ and change it to
 ```
 recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -Wl,--start-group {object_files} "{archive_file_path}" {compiler.c.elf.libs} {compiler.libraries.ldflags} -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"
 ```
+
+## Flashing the device credentials
+
+Each Airlytics ESP device needs to authenticate itself on the backend site with an specific and unique device ID and a secret key. This has to be written to the EEProm of the ESP before the firmware will be flahed. In order to write the device credentials to the ESP EEProm, open the file ```Config-Flasher/Config-Flasher.ino```. 
+
+In the setup section of the code, search for the line ```//deviceConfig = (DeviceConfig){ "<device id>", {<device secret in hex bytes>}};```. replace ```<device id>``` with the device ID you want to flash (IDs will be generated by connctd). 
+
+Your device secret has to handled as hex byte array. There are several ways to generate a hex array of the base64 key. An easy way is to copy your secret key, go to [cryptii](https://cryptii.com/pipes/base64-to-hex), paste your key on the left box (If you do not follow the link, choose Decode, Base64 and the RFC 3548 variant ). A byte array will be calculated on the right. Copy the byte array and replace it with ```<device secret in hex bytes>```. Be aware of the C++ syntax for hex declaration (0x). 
+
+Your final line should look like this (no valid id and secret used for the example):
+
+```deviceConfig = (DeviceConfig){ "mku63nztfw0gn043", {0x41, 0xc6, 0x03, 0x2e, 0x15, 0xc2, 0xa8, 0xc4, 0x5f, 0x98, 0x96, 0x99, 0xf4, 0x6d, 0x7f, 0x46, 0x66, 0x14, 0x0a, 0x98, 0xde, 0x18, 0x64, 0xb2, 0xe9, 0x77, 0x55, 0xba, 0xdd, 0x50, 0xf1, 0xcf}};``` 
+  
+ 
+
+## Calibrating the SCD30 manually
+
+
