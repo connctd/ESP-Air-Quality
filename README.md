@@ -62,6 +62,14 @@ In contrast to the red blinking LED-ring, a half blinking LED-ring indicates err
 
 This section explains the development of the Airlytics firmware for an ESP32 with the Arduino IDE.   
 
+There are 3 Arduino projects in this repository:
+| Arduino Project    | Description              |
+|:------------------ |:-------------------------|
+| Config-Flasher/Config-Flasher.ino     | Software to flash device credentials (id and key) to the ESP32 EEPROM |
+| SCD30_Calibration/SCD30_Calibration.ino  | Software to calibrate the CO2 Sensor (SCD30) |
+| AirLyticsFrame_ESP/AirLyticsFrame_ESP.ino | Firmware of the AirLytics Frame |
+
+
 ## Board Management
 
 In order to install ESP32 extension to the Arduino IDE, add the line ```https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json``` to the additional board manager URL in the Arduino Settings. 
@@ -142,4 +150,12 @@ Your device is ready to use.
 
 ## Calibrating the SCD30 manually
 
-coming soon..
+The program ```SCD30_Calibration``` allows the manual calibration of SCD30 CO2 Sensors. In general, this sensor has already been calibrated by the manufacturer. However, it may happen that this calibration is no longer valid. 
+ 
+ There are two ways of calibrating the SCD30 with this program
+       - place the sensor in an environment (outsite) with a CO2 value around 400ppm, wait until the measured CO2 value stabilizes and press the button 
+       - place the sensor in an environment with a known CO2 value, wait until the measured CO2 value stabilizes and send the reference value via Serial. 
+ 
+ The command to force the calibration is ```#cal:<your co2 value>$``` where ```<your co2 value>``` has to be replaced by an integer value 
+ representing the reference value for your calibration. Example: in order to calibrate the SCD30 with a reference of 600ppm, you have to
+ send ```#cal:600$```.
