@@ -48,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.59"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.60"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -136,9 +136,11 @@ EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 #define ERR_EEPROM             0x04
 #define ERR_NOT_FLASHED        0x05
 #define ERR_REQUESTED_RESTART  0x06
+#define ERR_WIRE               0xF0
 #define ERR_BME680             0xF1
 #define ERR_BSEC               0xF2
 #define ERR_BME280             0xF3
+
 
 #define WATCHDOG_TIMER         40 // 40 * 15s = 10min (600s)
 
@@ -151,6 +153,8 @@ int watchDogCounter             = WATCHDOG_TIMER; // will be decreased every wat
                                                   // will be set to WATCHDOG_TIMER when all conditions are fulfilled         
 
 // +++++++++++++++++++++++ Sensoring +++++++++++++++++++
+#define SDA                       21
+#define SCL                       22
 #define IAQA_NOT_CALIBRATED       0
 #define IAQA_UNCERTAIN            1
 #define IAQA_CALIBRATING          2
@@ -200,13 +204,27 @@ void setup() {
   Serial.println("\n Starting");
   Serial.print("AirLytics - ESP v");
   Serial.println(VERSION);
-  
-  Wire.begin();
-  
+ 
   initializeLedRing();   
   initializeRandomSeed();
   initWarningLed();
   initTriggerButton();
+  
+  bool ok = Wire.begin(SDA, SCL, 0);
+  //bool ok = Wire.begin();
+  if (!ok) {
+    // shit - this needs to be fixed due to a reset of Wire
+    Serial.println("Setup wire failed");
+    errorGauge(ERR_WIRE);
+    while (true) {
+      delay(1000);
+    }
+  } else {
+    Serial.println("Wire setup was successful");
+  }
+  
+  
+
  
   if (!initEEProm()){
     Serial.println("ERROR - Failed to initialize EEPROM");
@@ -1586,6 +1604,9 @@ void errorGauge(int error_id){
   blinkGauge(CRGB(255,0,0)); 
   delay(500);       
    switch (error_id){
+    case ERR_WIRE:
+       setGaugeColor(CRGB(255,0,0));   // red 
+       break;
     case ERR_BME680:
        setGaugeColor(CRGB(255,165,0));   // orange 
        break;
