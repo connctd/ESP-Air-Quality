@@ -48,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.60"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.61"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -210,7 +210,7 @@ void setup() {
   initWarningLed();
   initTriggerButton();
   
-  bool ok = Wire.begin(SDA, SCL, 0);
+  bool ok = Wire.begin(SDA, SCL);
   //bool ok = Wire.begin();
   if (!ok) {
     // shit - this needs to be fixed due to a reset of Wire
@@ -221,6 +221,7 @@ void setup() {
     }
   } else {
     Serial.println("Wire setup was successful");
+    Wire.setClock(50000L);
   }
   
   
@@ -230,7 +231,7 @@ void setup() {
     Serial.println("ERROR - Failed to initialize EEPROM");
     Serial.println("ESP will be restarted");
     errorRing(ERR_EEPROM);
-    ESP.restart();
+    restart();
   }
   
   if (!loadDeviceConfig()){
@@ -246,7 +247,7 @@ void setup() {
     Serial.println("ERROR - Unable to connect to WiFi");
     Serial.println("System will restart now"); 
     errorRing(ERR_NO_WIFI);
-    ESP.restart();
+    restart();
   }
  
   marconiClientInitialized = initMarconi();
@@ -344,7 +345,7 @@ void watchdog(unsigned long currTime){
     Serial.println("");
     Serial.println("");
     errorRing(ERR_REQUESTED_RESTART);
-    ESP.restart();
+    restart();
     return;
   }
 
@@ -365,7 +366,7 @@ void watchdog(unsigned long currTime){
     Serial.println("========================");
     Serial.println("");
     Serial.println("");
-    ESP.restart();
+    restart();
   }
 
   // check all conditions. either start or stop the watchdog
@@ -416,7 +417,7 @@ void doMarconiStuff(unsigned long currTime){
         }
         if (!initMarconi() && (marconiInitTryCnt >= 10)){ 
           errorRing(ERR_NO_MARCONI_CLIENT);                       
-          ESP.restart();     
+          restart();     
         }
       }
       return;
@@ -438,7 +439,7 @@ void doMarconiStuff(unsigned long currTime){
         if (marconiInitTryCnt >= 10){  
           Serial.println("Unable to initialize Session, System will reboot now");        
           errorRing(ERR_MARCONI_SESSION);          
-           ESP.restart();  
+           restart();  
         }
       }
       return;
@@ -1102,7 +1103,7 @@ void checkButton(){
       
       resetToFactorySettings();
       blinkRing(CRGB(255,0,0));     
-      ESP.restart();
+      restart();
       return;
     }
     if(pressedMillis >= 10000){
@@ -1675,4 +1676,15 @@ void setWarningLed(bool state){
    }
    digitalWrite(WARNING_PIN,warningLedOn);
    sendWarningLedState();
+}
+
+void restart() {
+  // trigger a softreset on sdc30 to prevent blocking state
+  if (scd30_available) {
+    Serial.println("triggering soft reset for scd30");
+    scd30.reset();
+    delay(500);
+  }
+  
+  ESP.restart();
 }
