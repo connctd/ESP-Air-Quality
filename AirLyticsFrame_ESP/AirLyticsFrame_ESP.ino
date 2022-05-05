@@ -48,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.61"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.62"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -484,10 +484,12 @@ void doMarconiStuff(unsigned long currTime){
               Serial.println("Error reading SCD30 data"); 
             }
           }
-        }              
-        readTemperature();
-        readHumidity();
-        readPressure();       
+        }         
+        readTemperatureHumidity();     
+       // readTemperature();
+       // readHumidity();
+        readPressure();      
+        //adjustTemperature(); 
         Serial.println("Sending property values");
         sendTemperatureValue();       
         sendHumidityValue();       
@@ -968,13 +970,23 @@ bool readParticles(){
   return true;
 }
 
-bool readTemperature(){  
+void readTemperatureHumidity(){  
   if (!sensorsAvailable()) {
-    return false;
+    return;
   }
  
  
   float newTemperature;
+  float newHumidity = 0.0;
+  
+
+  if (scd30_available){
+    newHumidity = int(scd30.relative_humidity);
+  } else if (bme680_available){
+    newHumidity = int(iaqSensor.humidity);
+  } else if (bme280_available){
+    newHumidity = int(bme280.readHumidity()); // ignore values after . 
+  }
   
   if (bme680_available){
     newTemperature = iaqSensor.temperature;  // use 0.5 steps for temperature  
@@ -983,9 +995,35 @@ bool readTemperature(){
   } else if (scd30_available){
     newTemperature = scd30.temperature;  // use 0.5 steps for temperature  
     // adding the offset - this is only needed for connctd FRAME setup to compensate ESP32 heat
+    float temp = newTemperature;
     newTemperature += TEMPERATURE_OFFSET;
+
+    Serial.print("measured temperature value : ");
+    Serial.println(temp);
+    Serial.print("adjusted temperature value : ");
+    Serial.println(newTemperature);
+    Serial.print("   measured humidity value : ");
+    Serial.println(newHumidity);
+    float dewPoint = calcDewPoint(temp, newHumidity);
+    Serial.print("      calculated dew point : ");
+    Serial.println(dewPoint);
+
+    newHumidity = calcTargetHumidity(dewPoint, newTemperature);
+
+    Serial.print("   adjusted humidity value : ");
+    Serial.println(newHumidity);
   } 
 
+
+
+  
+  if (humidity != newHumidity){
+    lastValueChange = millis();
+    humidity = newHumidity;
+    Serial.print("new humidity value = ");
+    Serial.println(humidity);  
+  
+  }
 
   
   if (temperature != newTemperature){
@@ -993,35 +1031,43 @@ bool readTemperature(){
     temperature = newTemperature;
     Serial.print("new temperature value = ");
     Serial.println(temperature);
-    return true;
-  }  
-  return false;
+ 
+  }   
 }
 
 
+float calcDewPoint(float temperature, float humidity){
+  float dewPoint = 0.0;
+  float vapPres = calcVaporPressure(temperature, humidity);
 
-bool readHumidity(){
-  if (!sensorsAvailable()) {
-    return false;
+  if (vapPres == 0) {
+    return dewPoint;
   }
-  float newHumidity = 0.0;
+
+  float v = log10(vapPres / 6.1078);
+  return (237.3 * v) / (7.5 - v);
   
-  if (scd30_available){
-    newHumidity = int(scd30.relative_humidity);
- } else if (bme680_available){
-    newHumidity = int(iaqSensor.humidity);
-  } else if (bme280_available){
-    newHumidity = int(bme280.readHumidity()); // ignore values after . 
-  }
-  if (humidity != newHumidity){
-    lastValueChange = millis();
-    humidity = newHumidity;
-    Serial.print("new humidity value = ");
-    Serial.println(humidity);  
-    return true;
-  }
-  return false;
 }
+
+float calcVaporPressure(float temperature,float humidity){
+  return humidity / 100 * calcSaturatedVaporPressure(temperature);
+}
+
+float calcSaturatedVaporPressure(float temperature){
+  return 6.1078 * pow(10, ((7.5*temperature)/(237.3+temperature)));
+}
+
+float calcAbsoluteHumidity(float temperature, float humidity){
+  return pow(10, 5) * 18.016 / 8314.3 * (calcVaporPressure(temperature, humidity) / (273.15 + temperature));
+}
+
+float calcTargetHumidity(float dewPoint, float targetTemperature){
+  return 100 * calcSaturatedVaporPressure(dewPoint) / calcSaturatedVaporPressure(targetTemperature);
+}
+
+
+
+
 
 
 bool readPressure(){

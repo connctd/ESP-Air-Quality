@@ -17,10 +17,10 @@
  * longer valid. 
  *
  * There are two ways of calibrating the SCD30 with this program
- *      - place the sensor in an environment with a CO2 content of about 400ppm, wait until the measured CO2 value stabilizes and 
+ *      - place the sensor in an environment with a CO2 concentration of about 400ppm, wait until the measured CO2 value stabilizes and 
  *        press the button 
- *      - place the sensor in an environment with known CO2 value, wait until the measured CO2 value stabilizes and send the 
- *      - reference value via Serial. 
+ *      - place the sensor in an environment with known CO2 value, wait until the measured CO2 value stabilizes and send the reference value via Serial. 
+ *      
  *
  * 
  * Calibration Method 1 - pressing the button
@@ -28,7 +28,7 @@
  * 
  * This software was written for the connctd ESP32 Wroover Board. The trigger button is triggering PIN 14. If you use a different 
  * setup, change the value of TRIGGER_PIN to your setup.
- * 
+ * When Button will be pressend, the SCD30 will be calibrated with a reference calibration value CAL_REFERENCE. 
  * 
  * 
  * Calibration Method 2 - sending calibration value
