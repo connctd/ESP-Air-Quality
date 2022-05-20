@@ -48,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.62"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.63"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -412,8 +412,8 @@ void doMarconiStuff(unsigned long currTime){
    // check if client is initialized
    if (!marconiClientInitialized){     
       if (currTime - lastMarconiClientInitTry > intervalMarconiClientInit){
-        if (!initMarconi() && (marconiInitTryCnt >= 3)){              
-          errorRing(ERR_NO_MARCONI_CLIENT);  // this is confusing for the user
+        if (!initMarconi() && (marconiInitTryCnt >= 5)){              
+          //errorRing(ERR_NO_MARCONI_CLIENT);  // this is confusing for the user
         }
         if (!initMarconi() && (marconiInitTryCnt >= 10)){ 
           errorRing(ERR_NO_MARCONI_CLIENT);                       
@@ -998,40 +998,29 @@ void readTemperatureHumidity(){
     float temp = newTemperature;
     newTemperature += TEMPERATURE_OFFSET;
 
-    Serial.print("measured temperature value : ");
-    Serial.println(temp);
-    Serial.print("adjusted temperature value : ");
+    Serial.print("temperature value : ");
+    Serial.print(temp);
+    Serial.print(" -> ");
     Serial.println(newTemperature);
-    Serial.print("   measured humidity value : ");
+    Serial.print("   humidity value : ");
     Serial.println(newHumidity);
     float dewPoint = calcDewPoint(temp, newHumidity);
-    Serial.print("      calculated dew point : ");
-    Serial.println(dewPoint);
-
-    newHumidity = calcTargetHumidity(dewPoint, newTemperature);
-
-    Serial.print("   adjusted humidity value : ");
+    Serial.print(" -> ");
+    newHumidity = round(calcTargetHumidity(dewPoint, newTemperature));   
     Serial.println(newHumidity);
   } 
 
-
-
+  newTemperature = int(newTemperature *2)/2; // 0.5 accuracy
   
   if (humidity != newHumidity){
     lastValueChange = millis();
-    humidity = newHumidity;
-    Serial.print("new humidity value = ");
-    Serial.println(humidity);  
-  
+    humidity = newHumidity;  
   }
 
   
   if (temperature != newTemperature){
     lastValueChange = millis();
     temperature = newTemperature;
-    Serial.print("new temperature value = ");
-    Serial.println(temperature);
- 
   }   
 }
 
