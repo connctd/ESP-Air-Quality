@@ -48,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.64"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.65"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -57,7 +57,7 @@ WiFiManagerParameter custom_field;
 const char* AP_SSID = "AirLytics Frame";
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
 #define LED_PIN   25
-#define STARTPIXEL 0  // LED Ring is turned 90°, so start with Pixel #6
+#define STARTPIXEL 6  // LED Ring is turned 90°, so start with Pixel #6. !!!!  BE AWARE THAT STARTPIXEL+NUMPIXEL < ALLPIXEL !!!
 #define NUMPIXELS 13
 #define ALLPIXELS 24
 #define LED_TYPE    WS2811
