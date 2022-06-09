@@ -57,7 +57,7 @@ WiFiManagerParameter custom_field;
 const char* AP_SSID = "AirLytics Frame";
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
 #define LED_PIN   25
-#define STARTPIXEL 6  // LED Ring is turned 90°, so start with Pixel #6. !!!!  BE AWARE THAT STARTPIXEL+NUMPIXEL < ALLPIXEL !!!
+#define STARTPIXEL 6  // LED Ring is rotated 90° against clock, start with Pixel #6. !!!!  BE AWARE THAT STARTPIXEL+NUMPIXEL < ALLPIXEL !!!
 #define NUMPIXELS 13
 #define ALLPIXELS 24
 #define LED_TYPE    WS2811
