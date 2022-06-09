@@ -57,6 +57,7 @@ WiFiManagerParameter custom_field;
 const char* AP_SSID = "AirLytics Frame";
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
 #define LED_PIN   25
+#define STARTPIXEL 0  // LED Ring is turned 90°, so start with Pixel #6
 #define NUMPIXELS 13
 #define ALLPIXELS 24
 #define LED_TYPE    WS2811
@@ -1538,24 +1539,24 @@ void sensorInfo(){
   clearRing();
   
   if (scd30_available) {
-    leds[0] = CRGB(0,255,0);   
+    leds[0+STARTPIXEL] = CRGB(0,255,0);   
   } else {
-    leds[0] = CRGB(255,255,255);   
+    leds[0+STARTPIXEL] = CRGB(255,255,255);   
   }
   if (bme680_available) {
-    leds[1] = CRGB(0,255,0);   
+    leds[1+STARTPIXEL] = CRGB(0,255,0);   
   } else {
-    leds[1] =CRGB(255,255,255);   
+    leds[1+STARTPIXEL] =CRGB(255,255,255);   
   }
   if (bme280_available) {
-    leds[2] = CRGB(0,255,0);   
+    leds[2+STARTPIXEL] = CRGB(0,255,0);   
   } else {
-    leds[2] = CRGB(255,255,255);   
+    leds[2+STARTPIXEL] = CRGB(255,255,255);   
   }
   if (sps30_available) {
-    leds[3] = CRGB(0,255,0);   
+    leds[3+STARTPIXEL] = CRGB(0,255,0);   
   } else {
-    leds[3] = CRGB(255,255,255);   
+    leds[3+STARTPIXEL] = CRGB(255,255,255);   
   }
 
   FastLED.show();
@@ -1567,7 +1568,7 @@ void sensorInfo(){
 void animateGauge(int startPixel, int stopPixel){
 
   if ((gaugeValue < 0) || (!marconiSessionInitialized)){
-    leds[0] = CRGB(255,255,255); 
+    leds[0+STARTPIXEL] = CRGB(255,255,255); 
     FastLED.show();
     return;
   }
@@ -1575,13 +1576,13 @@ void animateGauge(int startPixel, int stopPixel){
   
   if (startPixel <= stopPixel) {  
     for (int i=0; i < stopPixel; i++){
-      leds[i] = CRGB( (255/NUMPIXELS)*i,(150-(150/NUMPIXELS)*i),0); 
+      leds[i+STARTPIXEL] = CRGB( (255/NUMPIXELS)*i,(150-(150/NUMPIXELS)*i),0); 
       FastLED.show();
       delay(animationSpeed); 
     }  
   } else {    
     for (int i=startPixel; i >= stopPixel; i--){   
-      leds[i] = CRGB::Black;    
+      leds[i+STARTPIXEL] = CRGB::Black;    
       FastLED.show(); 
       delay(animationSpeed); 
     }    
@@ -1604,7 +1605,7 @@ void setRingColor(const CRGB color){
 
 void setGaugeColor(const CRGB color){
   for (int i=0; i <= NUMPIXELS; i++){
-      leds[i] = color;    
+      leds[i+STARTPIXEL] = color;    
   }
   FastLED.show();  
 }
