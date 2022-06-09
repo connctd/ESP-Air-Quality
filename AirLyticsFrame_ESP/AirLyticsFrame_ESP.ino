@@ -48,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.63"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.64"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -1003,11 +1003,13 @@ void readTemperatureHumidity(){
     Serial.print(" -> ");
     Serial.println(newTemperature);
     Serial.print("   humidity value : ");
-    Serial.println(newHumidity);
-    float dewPoint = calcDewPoint(temp, newHumidity);
-    Serial.print(" -> ");
-    newHumidity = round(calcTargetHumidity(dewPoint, newTemperature));   
-    Serial.println(newHumidity);
+    Serial.print(newHumidity);
+    if (newHumidity < 85) {
+      float dewPoint = calcDewPoint(temp, newHumidity);
+      Serial.print(" -> ");
+      newHumidity = round(calcTargetHumidity(dewPoint, newTemperature));   
+      Serial.println(newHumidity);
+    }
   } 
 
   newTemperature = int(newTemperature *2)/2; // 0.5 accuracy
@@ -1046,17 +1048,19 @@ float calcSaturatedVaporPressure(float temperature){
   return 6.1078 * pow(10, ((7.5*temperature)/(237.3+temperature)));
 }
 
+
 float calcAbsoluteHumidity(float temperature, float humidity){
   return pow(10, 5) * 18.016 / 8314.3 * (calcVaporPressure(temperature, humidity) / (273.15 + temperature));
 }
 
+
 float calcTargetHumidity(float dewPoint, float targetTemperature){
-  return 100 * calcSaturatedVaporPressure(dewPoint) / calcSaturatedVaporPressure(targetTemperature);
+  float hum = 100 * calcSaturatedVaporPressure(dewPoint) / calcSaturatedVaporPressure(targetTemperature);
+  if (hum > 100) {
+    return 100.0;
+  }
+  return hum;
 }
-
-
-
-
 
 
 bool readPressure(){
