@@ -48,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.64"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.65"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -105,7 +105,7 @@ MarconiClient *marconiClient;
 bool marconiSessionInitialized          = false;
 bool marconiClientInitialized           = false;
 unsigned long resubscribeInterval       = 60000; // in ms
-unsigned long propertyUpdateInterval    = 30000; // in ms
+unsigned long propertyUpdateInterval    = 120000; // in ms
 unsigned long lastResubscribe           = 0; // periodically resubscribe
 unsigned long lastInitTry               = 0;
 unsigned long lastPropertyUpdate        = 0; // time when property updates were sent
