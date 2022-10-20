@@ -1,22 +1,22 @@
 
 /*
- * 
+ *
  *  ----------------------------------------------------------------------------------------------------------------------
- *          
- *                 _      _           _   _            ______                                   ______  _____ _____  
- *           /\   (_)    | |         | | (_)          |  ____|                                 |  ____|/ ____|  __ \ 
+ *
+ *                 _      _           _   _            ______                                   ______  _____ _____
+ *           /\   (_)    | |         | | (_)          |  ____|                                 |  ____|/ ____|  __ \
  *          /  \   _ _ __| |    _   _| |_ _  ___ ___  | |__ _ __ __ _ _ __ ___   ___   ______  | |__  | (___ | |__) |
- *         / /\ \ | | '__| |   | | | | __| |/ __/ __| |  __| '__/ _` | '_ ` _ \ / _ \ |______| |  __|  \___ \|  ___/ 
- *        / ____ \| | |  | |___| |_| | |_| | (__\__ \ | |  | | | (_| | | | | | |  __/          | |____ ____) | |     
- *       /_/    \_\_|_|  |______\__, |\__|_|\___|___/ |_|  |_|  \__,_|_| |_| |_|\___|          |______|_____/|_|     
- *                               __/ |                                                                               
- *                              |___/                                                                          IoT connctd 
- *  ----------------------------------------------------------------------------------------------------------------------                          
- *                                                                                                            
- * 
+ *         / /\ \ | | '__| |   | | | | __| |/ __/ __| |  __| '__/ _` | '_ ` _ \ / _ \ |______| |  __|  \___ \|  ___/
+ *        / ____ \| | |  | |___| |_| | |_| | (__\__ \ | |  | | | (_| | | | | | |  __/          | |____ ____) | |
+ *       /_/    \_\_|_|  |______\__, |\__|_|\___|___/ |_|  |_|  \__,_|_| |_| |_|\___|          |______|_____/|_|
+ *                               __/ |
+ *                              |___/                                                                          IoT connctd
+ *  ----------------------------------------------------------------------------------------------------------------------
+ *
+ *
  *           FileStructure ┐
  *                         ├ Variable Declaration ┐
- *                         |                      ├ WiFi Management 
+ *                         |                      ├ WiFit 
  *                         |                      ├ Gauge
  *                         |                      ├ Connctd / Coap
  *                         |                      ├ General
@@ -26,18 +26,18 @@
  *                         ├ System Functions
  *                         ├ Sensoring
  *                         ├ Connctd
- *                         ├ WiFi Management 
- *                         └ Gauge / LED-Ring / Warning LED 
- * 
- * 
- * 
- * 
+ *                         ├ WiFit 
+ *                         └ Gauge / LED-Ring / D 
+ *
+ *
+ *
+ *
  */
 
 
 #include <EEPROM.h>
 #include <Wire.h>
-// additional libraries
+ // additional libraries
 #include "marconi_client.h"   // https://github.com/connctd/marconi-lib                   communication with connctd backend
 #include <FastLED.h>          // https://github.com/FastLED/FastLED                       LED-ring   
 #include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager                     configuration of WiFi settings via Smartphone
@@ -48,14 +48,15 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.65"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.66"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
-WiFiManager wm;   
-WiFiManagerParameter custom_field; 
+WiFiManager wm;
+WiFiManagerParameter custom_field;
 const char* AP_SSID = "AirLytics Frame";
 // ++++++++++++++++++++++ Gauge ++++++++++++++++++++
+#define DEBUG false
 #define LED_PIN   25
 #define NUMPIXELS 13
 #define ALLPIXELS 24
@@ -64,12 +65,12 @@ const char* AP_SSID = "AirLytics Frame";
 
 CRGB leds[ALLPIXELS];
 
-int   animationSpeed = 50;  
-int   oldScaleValue  = 1;     // needed for value change animation of gauge
-int   gaugeValue     = -1;    // how much percent of gauge should light up (from left to right); -1 means no value set from backend
-float dimmLevel      = 1.0F;  // value between 0 (off) and 1 (full brightness)
+int   animationSpeed = 50;
+int   oldScaleValue = 1;     // needed for value change animation of gauge
+int   gaugeValue = -1;    // how much percent of gauge should light up (from left to right); -1 means no value set from backend
+float dimmLevel = 1.0F;  // value between 0 (off) and 1 (full brightness)
 
-int notCalibratedAnimationState            = 0;
+int notCalibratedAnimationState = 0;
 unsigned long lastCalibrationAnimationStep = 0;
 
 // +++++++++++++++++++++ CONNCTD Communication +++++++++++++++++++++
@@ -101,26 +102,26 @@ const char* marconiUrl = "marconi-udp.connectors.connctd.io";
 IPAddress marconiIp;
 int port = 5683;
 
-MarconiClient *marconiClient;
-bool marconiSessionInitialized          = false;
-bool marconiClientInitialized           = false;
-unsigned long resubscribeInterval       = 60000; // in ms
-unsigned long propertyUpdateInterval    = 120000; // in ms
-unsigned long lastResubscribe           = 0; // periodically resubscribe
-unsigned long lastInitTry               = 0;
-unsigned long lastPropertyUpdate        = 0; // time when property updates were sent
-unsigned long lastMarconiClientInitTry  = 0;
+MarconiClient* marconiClient;
+bool marconiSessionInitialized = false;
+bool marconiClientInitialized = false;
+unsigned long resubscribeInterval = 60000; // in ms
+unsigned long propertyUpdateInterval = 120000; // in ms, overwritten in debug mode
+unsigned long lastResubscribe = 0; // periodically resubscribe
+unsigned long lastInitTry = 0;
+unsigned long lastPropertyUpdate = 0; // time when property updates were sent
+unsigned long lastMarconiClientInitTry = 0;
 unsigned long lastObservationOngoingEventReceived = 0;
-unsigned long lastActionReceived        = 0;
-unsigned long observationTimeout        = 1000*60*5; // max time with no observation ongoing -> will not receive any actions from backend
+unsigned long lastActionReceived = 0;
+unsigned long observationTimeout = 1000 * 60 * 5; // max time with no observation ongoing -> will not receive any actions from backend
 unsigned long intervalMarconiClientInit = 20000;
-int marconiInitTryCnt                   = 0;
-unsigned long actionReceiveTimeout      = 1000 * 60 * 10; // 10 min
+int marconiInitTryCnt = 0;
+unsigned long actionReceiveTimeout = 1000 * 60 * 10; // 10 min
 
 
-struct DeviceConfig {    
-    char id[DEVICE_ID_SIZE];    
-    unsigned char key[CHACHA_KEY_SIZE];
+struct DeviceConfig {
+  char id[DEVICE_ID_SIZE];
+  unsigned char key[CHACHA_KEY_SIZE];
 };
 DeviceConfig deviceConfig;
 EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
@@ -146,9 +147,9 @@ EEPROMClass  deviceConfigMemory("devConfig", DEVICE_CONFIG_MEMORY_SIZE);
 
 bool warningLedOn = false;
 
-int watchdogInterval            = 15000; // 15s 
+int watchdogInterval = 15000; // 15s 
 unsigned long lastWatchdogCheck = 0;
-int watchDogCounter             = WATCHDOG_TIMER; // will be decreased every watchdog Interval when bad behavior was detected
+int watchDogCounter = WATCHDOG_TIMER; // will be decreased every watchdog Interval when bad behavior was detected
                                                   // system restarts when watchDogCounter reaches 0  
                                                   // will be set to WATCHDOG_TIMER when all conditions are fulfilled         
 
@@ -167,27 +168,27 @@ bool buttonPressed = false;
 unsigned long buttonPressMillis = 0;
 
 float temperature = 0.0;
-float humidity    = 0.0;
-float pressure    = 0.0;
-int co2           = 0;
+float humidity = 0.0;
+float pressure = 0.0;
+int co2 = 0;
 
 bool bme280_available = false;
 bool bme680_available = false;
-bool scd30_available  = false;
+bool scd30_available = false;
 bool sps30_available = false;
 
 Adafruit_SCD30  scd30;
-Adafruit_BME280 bme280; 
+Adafruit_BME280 bme280;
 Bsec iaqSensor;
 int iaq_accuracy = IAQA_NOT_CALIBRATED;
 
-EEPROMClass  bsecStateMemory("bsecState", BSEC_MAX_STATE_BLOB_SIZE+1);  // status of BSEC library coul be stored in EEPROM when SCD30 was calibrated
-uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
-bool periodicallyBsecSave             = false; // periodically save the bsec state to EEPROM? will be addionally saved whenever bsec_accuracy switches to 1 or 3; 
-unsigned long bsecStateUpdateInterval = 60*60*1000; // every 60min
-unsigned long lastBsecUpdate          = 0;
-unsigned long lastValueChange         = 0;
-unsigned long valueChangeTimeout      = 1000*60*10; // 10 min
+EEPROMClass  bsecStateMemory("bsecState", BSEC_MAX_STATE_BLOB_SIZE + 1);  // status of BSEC library coul be stored in EEPROM when SCD30 was calibrated
+uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = { 0 };
+bool periodicallyBsecSave = false; // periodically save the bsec state to EEPROM? will be addionally saved whenever bsec_accuracy switches to 1 or 3; 
+unsigned long bsecStateUpdateInterval = 60 * 60 * 1000; // every 60min
+unsigned long lastBsecUpdate = 0;
+unsigned long lastValueChange = 0;
+unsigned long valueChangeTimeout = 1000 * 60 * 10; // 10 min
 
 struct sps30_measurement m;
 
@@ -195,21 +196,27 @@ struct sps30_measurement m;
 //                                   SETUP
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-void setup() {  
+void setup() {
   marconiSessionInitialized = false;
   marconiClientInitialized = false;
-  
+
+  if (DEBUG) {
+    propertyUpdateInterval = 30000;
+  }
+
   Serial.begin(115200);
-  Serial.setDebugOutput(true);   
+  Serial.setDebugOutput(true);
   Serial.println("\n Starting");
   Serial.print("AirLytics - ESP v");
   Serial.println(VERSION);
- 
-  initializeLedRing();   
+  Serial.print("Debug enabled: ");
+  Serial.println(DEBUG);
+
+  initializeLedRing();
   initializeRandomSeed();
   initWarningLed();
   initTriggerButton();
-  
+
   bool ok = Wire.begin(SDA, SCL);
   //bool ok = Wire.begin();
   if (!ok) {
@@ -219,84 +226,85 @@ void setup() {
     while (true) {
       delay(1000);
     }
-  } else {
+  }
+  else {
     Serial.println("Wire setup was successful");
     Wire.setClock(50000L);
   }
-  
-  
 
- 
-  if (!initEEProm()){
+
+
+
+  if (!initEEProm()) {
     Serial.println("ERROR - Failed to initialize EEPROM");
     Serial.println("ESP will be restarted");
     errorRing(ERR_EEPROM);
     restart();
   }
-  
-  if (!loadDeviceConfig()){
+
+  if (!loadDeviceConfig()) {
     Serial.println("ERROR - Device was not flashed with Device ID and KEY!!!");
-    while(true){
+    while (true) {
       errorRing(ERR_NOT_FLASHED);
     }
   }
-     
-  initializeWiFi(); 
 
-  if (!connectToWiFi()){   
+  initializeWiFi();
+
+  if (!connectToWiFi()) {
     Serial.println("ERROR - Unable to connect to WiFi");
-    Serial.println("System will restart now"); 
+    Serial.println("System will restart now");
     errorRing(ERR_NO_WIFI);
     restart();
   }
- 
+
   marconiClientInitialized = initMarconi();
 
   // try to 
   initSensors();
- 
-  refreshGauge();  
+
+  refreshGauge();
 }
 
-void initSensors(){
+void initSensors() {
   sps30_available = initSPS30();
   delay(1000);
   bme680_available = initBME680();
   delay(1000);
-  bme280_available = initBME280();   
+  bme280_available = initBME280();
   delay(1000);
-  scd30_available  = initSCD30();
+  scd30_available = initSCD30();
   delay(1000);
   // show status about sensors that have been found  
   sensorInfo();
 }
 
-void initWarningLed(){
+void initWarningLed() {
   pinMode(WARNING_PIN, OUTPUT);
-  digitalWrite(WARNING_PIN,false);
+  digitalWrite(WARNING_PIN, false);
 }
 
 
-void initTriggerButton(){
-    pinMode(TRIGGER_PIN, INPUT);
+void initTriggerButton() {
+  pinMode(TRIGGER_PIN, INPUT);
 }
 
-void initializeRandomSeed(){
-    //srand(ESP8266TrueRandom.random()); ‚
-     srand (analogRead(0));  // this one will not work on ESP8266!!
+void initializeRandomSeed() {
+  //srand(ESP8266TrueRandom.random()); ‚
+  srand(analogRead(0));  // this one will not work on ESP8266!!
 }
 
-void initializeLedRing(){
-   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, ALLPIXELS).setCorrection( TypicalLEDStrip );
-   FastLED.setBrightness(255);  
-  clearRing();    
+void initializeLedRing() {
+  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, ALLPIXELS).setCorrection(TypicalLEDStrip);
+  FastLED.setBrightness(255);
+  clearRing();
 }
 
-bool initMarconi(){
-  Serial.println("initialize Marconi Library"); 
+bool initMarconi() {
+  Serial.println("initialize Marconi Library");
   marconiInitTryCnt++;
   lastMarconiClientInitTry = millis();
-  if (!resolveMarconiIp()){
+  if (!resolveMarconiIp()) {
     Serial.println("ERROR, unable to initialize Marconi library");
     return false;
   }
@@ -305,9 +313,9 @@ bool initMarconi(){
   return true;
 }
 
-bool initEEProm(){
+bool initEEProm() {
   bool res = deviceConfigMemory.begin(DEVICE_CONFIG_MEMORY_SIZE);
-  res = res && bsecStateMemory.begin(BSEC_MAX_STATE_BLOB_SIZE+1);
+  res = res && bsecStateMemory.begin(BSEC_MAX_STATE_BLOB_SIZE + 1);
   return res;
 }
 
@@ -315,31 +323,32 @@ bool initEEProm(){
 //                                    THE LOOP 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-void loop() {    
+void loop() {
   checkButton();        // check wether trigger button was pressed    
   watchdog(millis());   // trigger the watchdog routine
-  
+
   if (bme680_available) {
     // do not do other stuff when calibrating -> high probability for calibration failure
-    if (iaq_accuracy != IAQA_NOT_CALIBRATED) {        
+    if (iaq_accuracy != IAQA_NOT_CALIBRATED) {
       doMarconiStuff(millis());  // communication stuff with connctd library
-    } 
-  }  else {
-      doMarconiStuff(millis());  // communication stuff with connctd library
+    }
   }
-  
+  else {
+    doMarconiStuff(millis());  // communication stuff with connctd library
+  }
+
   doSensorStuff(millis());  // read sensor values
-  
+
   // and wait for 10ms
   delay(10);
 }
 
-void watchdog(unsigned long currTime){
+void watchdog(unsigned long currTime) {
 
-  if (gaugeValue == -255){    
+  if (gaugeValue == -255) {
     Serial.println("");
     Serial.println("======= WATCHDOG =======");
-    Serial.println("    Requested Restart");    
+    Serial.println("    Requested Restart");
     Serial.println("System will restart now!");
     Serial.println("========================");
     Serial.println("");
@@ -350,19 +359,19 @@ void watchdog(unsigned long currTime){
   }
 
   // when there is nothing to check, return
-  if (currTime - lastWatchdogCheck < watchdogInterval){
+  if (currTime - lastWatchdogCheck < watchdogInterval) {
     return;
-  } 
+  }
 
   // time to check conditions again
   lastWatchdogCheck = currTime;
   // when watchdog is active and time is up, restart everything
-  if (watchDogCounter <= 0){
+  if (watchDogCounter <= 0) {
     Serial.println("");
     Serial.println("======= WATCHDOG =======");
     printWatchdogStatus();
     Serial.println("------------------------");
-    Serial.println("System will reboot now!");    
+    Serial.println("System will reboot now!");
     Serial.println("========================");
     Serial.println("");
     Serial.println("");
@@ -370,27 +379,28 @@ void watchdog(unsigned long currTime){
   }
 
   // check all conditions. either start or stop the watchdog
-  if ((isActionTimeout()) || (isValueChangeTimeout()) || (gaugeValue < 0) || (!marconiSessionInitialized) || (!marconiClientInitialized) || (isObservationTimeout())){
+  if ((isActionTimeout()) || (isValueChangeTimeout()) || (gaugeValue < 0) || (!marconiSessionInitialized) || (!marconiClientInitialized) || (isObservationTimeout())) {
     // watchdog activation? or was it activated already?
-      if (watchDogCounter == WATCHDOG_TIMER){
-        // watchdog activation, print current status
-        Serial.println("============ WATCHDOG ===========");
-        printWatchdogStatus();
-        Serial.println("================================");
-      }
-      watchDogCounter--;
-  } else {
-    if (watchDogCounter <  WATCHDOG_TIMER){
+    if (watchDogCounter == WATCHDOG_TIMER) {
+      // watchdog activation, print current status
+      Serial.println("============ WATCHDOG ===========");
+      printWatchdogStatus();
+      Serial.println("================================");
+    }
+    watchDogCounter--;
+  }
+  else {
+    if (watchDogCounter < WATCHDOG_TIMER) {
       Serial.println("============ WATCHDOG ===========");
       Serial.println("Watchdog Countdown Reset - everything seems to be fine");
       Serial.println("================================");
     }
     watchDogCounter = WATCHDOG_TIMER;
   }
-  
+
 }
 
-void printWatchdogStatus(){
+void printWatchdogStatus() {
   Serial.println("Watchdog active, countown is running");
   Serial.print("ValueChangeTimeout        : ");
   Serial.println(isValueChangeTimeout());
@@ -407,148 +417,150 @@ void printWatchdogStatus(){
 }
 
 // Do everything that is needed for the communication with the connctd backend
-void doMarconiStuff(unsigned long currTime){
-  
-   // check if client is initialized
-   if (!marconiClientInitialized){     
-      if (currTime - lastMarconiClientInitTry > intervalMarconiClientInit){
-        if (!initMarconi() && (marconiInitTryCnt >= 5)){              
-          //errorRing(ERR_NO_MARCONI_CLIENT);  // this is confusing for the user
-        }
-        if (!initMarconi() && (marconiInitTryCnt >= 10)){ 
-          errorRing(ERR_NO_MARCONI_CLIENT);                       
-          restart();     
-        }
+void doMarconiStuff(unsigned long currTime) {
+
+  // check if client is initialized
+  if (!marconiClientInitialized) {
+    if (currTime - lastMarconiClientInitTry > intervalMarconiClientInit) {
+      if (!initMarconi() && (marconiInitTryCnt >= 5)) {
+        //errorRing(ERR_NO_MARCONI_CLIENT);  // this is confusing for the user
       }
-      return;
-   }
-   
-   marconiClient->loop();
-   currTime = millis();
-   
-   if (!marconiSessionInitialized) {
-      if (currTime - lastInitTry > 10000){
-        lastInitTry = currTime;
-        initMarconiSession();        
-        if (marconiInitTryCnt >= 3){          
-          Serial.print("Unable to initialize Session. Try ");
-          Serial.print(marconiInitTryCnt);
-          Serial.println("/10");
-          errorRing(ERR_MARCONI_SESSION); // this is confusing for the user
-        }
-        if (marconiInitTryCnt >= 10){  
-          Serial.println("Unable to initialize Session, System will reboot now");        
-          errorRing(ERR_MARCONI_SESSION);          
-           restart();  
-        }
+      if (!initMarconi() && (marconiInitTryCnt >= 10)) {
+        errorRing(ERR_NO_MARCONI_CLIENT);
+        restart();
       }
-      return;
-  }  
-
-  
-   if (currTime - lastObservationOngoingEventReceived > observationTimeout) {
-        Serial.println("Observation Timeout - System tries to init session again.");
-        marconiSessionInitialized = false;  
-        lastResubscribe == 0;
-        refreshGauge();
-        return;
-   } 
-
-   
-   if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0 ) {
-      lastResubscribe = currTime;
-      marconiClient->subscribeForActions(onAction);    
-   }   
-   
-
-   if ((gaugeValue >=0) && (currTime - lastObservationOngoingEventReceived > (observationTimeout/2))) {
-         Serial.println("Connection seems to be lost. Did not received event 'Observation Ongoing'");
-         Serial.println("Gauge will be disabled by setting color to white");
-         //marconiSessionInitialized = false;         
-         gaugeValue = -1;
-         refreshGauge();
-   }
-
-   
-
-   // periodically send property updates
-   if (currTime - lastPropertyUpdate > propertyUpdateInterval) {    
-      Serial.println("Sending Properties Update");  
-      lastPropertyUpdate = currTime;
-      sendGaugeDimmLevelValue();
-      sendWarningLedState();
-      if (sensorsAvailable()) {        
-        if (scd30_available){
-          if (scd30.dataReady()){
-            if (!scd30.read()){ 
-              Serial.println("Error reading SCD30 data"); 
-            }
-          }
-        }         
-        readTemperatureHumidity();     
-       // readTemperature();
-       // readHumidity();
-        readPressure();      
-        //adjustTemperature(); 
-        Serial.println("Sending property values");
-        sendTemperatureValue();       
-        sendHumidityValue();       
-        sendPressureValue();        
-        if (sps30_available){
-          readParticles();  
-          sendParticleValues();
-        }                
-        if (readCo2()){
-          sendCo2Value();
-        } else {
-         if (readCo2Equivalent()){
-           sendCo2Value();
-         } 
-        }
-      }
-    }     
-  
-}
-
-void doSensorStuff(unsigned long currTime){  
-  // BME680/BSEC stuff
-  if (bme680_available){         
-    if (!checkIaqSensorStatus()) {
-      evalIaqSensorStatus();
-      
-      
     }
-     if (periodicallyBsecSave) {     
-        if (currTime - lastBsecUpdate > bsecStateUpdateInterval){
-          saveBsecState();
-          lastBsecUpdate = currTime;
-        }
-     }
-     // periodicaly trigger iaqSensor
-     if (iaqSensor.run()) {
-         // in case new data is available
-         printIAQdata();
-         evalIaqAccuracy();         
-     } else {        
-        // iaqSensor.run() could be false when no new data available or when an error occurs
-        // need to check the status for this.   
-        if (!checkIaqSensorStatus()){
-           while(true){
-             errorGauge(ERR_BSEC);
-           }
-        }
-     }
-     // trigger animation when sensor is calibrating, do not animate when button is pressed
-     if ((!isIaqCalibrated()) && (!buttonPressed)){        
-        if (currTime - lastCalibrationAnimationStep > animationSpeed){        
-          triggerNotCalibratedAnimation();
-          lastCalibrationAnimationStep = currTime;
-        }
-     }
+    return;
   }
 
-  
-  
+  marconiClient->loop();
+  currTime = millis();
+
+  if (!marconiSessionInitialized) {
+    if (currTime - lastInitTry > 10000) {
+      lastInitTry = currTime;
+      initMarconiSession();
+      if (marconiInitTryCnt >= 3) {
+        Serial.print("Unable to initialize Session. Try ");
+        Serial.print(marconiInitTryCnt);
+        Serial.println("/10");
+        errorRing(ERR_MARCONI_SESSION); // this is confusing for the user
+      }
+      if (marconiInitTryCnt >= 10) {
+        Serial.println("Unable to initialize Session, System will reboot now");
+        errorRing(ERR_MARCONI_SESSION);
+        restart();
+      }
+    }
+    return;
+  }
+
+
+  if (currTime - lastObservationOngoingEventReceived > observationTimeout) {
+    Serial.println("Observation Timeout - System tries to init session again.");
+    marconiSessionInitialized = false;
+    lastResubscribe == 0;
+    refreshGauge();
+    return;
+  }
+
+
+  if (currTime - lastResubscribe > resubscribeInterval || lastResubscribe == 0) {
+    lastResubscribe = currTime;
+    marconiClient->subscribeForActions(onAction);
+  }
+
+
+  if ((gaugeValue >= 0) && (currTime - lastObservationOngoingEventReceived > (observationTimeout / 2))) {
+    Serial.println("Connection seems to be lost. Did not received event 'Observation Ongoing'");
+    Serial.println("Gauge will be disabled by setting color to white");
+    //marconiSessionInitialized = false;         
+    gaugeValue = -1;
+    refreshGauge();
+  }
+
+
+
+  // periodically send property updates
+  if (currTime - lastPropertyUpdate > propertyUpdateInterval) {
+    Serial.println("Sending Properties Update");
+    lastPropertyUpdate = currTime;
+    sendGaugeDimmLevelValue();
+    sendWarningLedState();
+    if (sensorsAvailable()) {
+      if (scd30_available) {
+        if (scd30.dataReady()) {
+          if (!scd30.read()) {
+            Serial.println("Error reading SCD30 data");
+          }
+        }
+      }
+      readTemperatureHumidity();
+      // readTemperature();
+      // readHumidity();
+      readPressure();
+      //adjustTemperature(); 
+      Serial.println("Sending property values");
+      sendTemperatureValue();
+      sendHumidityValue();
+      sendPressureValue();
+      if (sps30_available) {
+        readParticles();
+        sendParticleValues();
+      }
+      if (readCo2()) {
+        sendCo2Value();
+      }
+      else {
+        if (readCo2Equivalent()) {
+          sendCo2Value();
+        }
+      }
+    }
+  }
+
+}
+
+void doSensorStuff(unsigned long currTime) {
+  // BME680/BSEC stuff
+  if (bme680_available) {
+    if (!checkIaqSensorStatus()) {
+      evalIaqSensorStatus();
+
+
+    }
+    if (periodicallyBsecSave) {
+      if (currTime - lastBsecUpdate > bsecStateUpdateInterval) {
+        saveBsecState();
+        lastBsecUpdate = currTime;
+      }
+    }
+    // periodicaly trigger iaqSensor
+    if (iaqSensor.run()) {
+      // in case new data is available
+      printIAQdata();
+      evalIaqAccuracy();
+    }
+    else {
+      // iaqSensor.run() could be false when no new data available or when an error occurs
+      // need to check the status for this.   
+      if (!checkIaqSensorStatus()) {
+        while (true) {
+          errorGauge(ERR_BSEC);
+        }
+      }
+    }
+    // trigger animation when sensor is calibrating, do not animate when button is pressed
+    if ((!isIaqCalibrated()) && (!buttonPressed)) {
+      if (currTime - lastCalibrationAnimationStep > animationSpeed) {
+        triggerNotCalibratedAnimation();
+        lastCalibrationAnimationStep = currTime;
+      }
+    }
+  }
+
+
+
 }
 
 
@@ -557,33 +569,33 @@ void doSensorStuff(unsigned long currTime){
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-bool loadDeviceConfig(){
-   Serial.println("reading device configuration"); 
+bool loadDeviceConfig() {
+  Serial.println("reading device configuration");
 
-   deviceConfigMemory.get(0,deviceConfig);      
-   Serial.print("Device ID = ");
-   Serial.println(deviceConfig.id);    
-    Serial.print("Device ID: ");
-   for (int i = 0; i < DEVICE_ID_SIZE; i++){
-      Serial.print( deviceConfig.id[i],HEX);
-      Serial.print(" ");
-   }
-   Serial.println();
-   Serial.print("last 5 bytes of Device Key: ");
-   for (int i = CHACHA_KEY_SIZE-5; i < CHACHA_KEY_SIZE; i++){
-      Serial.print( deviceConfig.key[i],HEX);
-      Serial.print(" ");
-   }
-   Serial.println();
+  deviceConfigMemory.get(0, deviceConfig);
+  Serial.print("Device ID = ");
+  Serial.println(deviceConfig.id);
+  Serial.print("Device ID: ");
+  for (int i = 0; i < DEVICE_ID_SIZE; i++) {
+    Serial.print(deviceConfig.id[i], HEX);
+    Serial.print(" ");
+  }
+  Serial.println();
+  Serial.print("last 5 bytes of Device Key: ");
+  for (int i = CHACHA_KEY_SIZE - 5; i < CHACHA_KEY_SIZE; i++) {
+    Serial.print(deviceConfig.key[i], HEX);
+    Serial.print(" ");
+  }
+  Serial.println();
 
-  return ((deviceConfig.id[0] != 0xFF) && (deviceConfig.id[0] != 0)) ; 
+  return ((deviceConfig.id[0] != 0xFF) && (deviceConfig.id[0] != 0));
 }
 
-void resetToFactorySettings(){   
-   Serial.println("!!!!!!!!!!!!  Performing Factory Reset  !!!!!!!!!!!!!");
-   Serial.println("Deleting Wifi Settings");
-   wm.resetSettings();   
-   eraseBsecState();
+void resetToFactorySettings() {
+  Serial.println("!!!!!!!!!!!!  Performing Factory Reset  !!!!!!!!!!!!!");
+  Serial.println("Deleting Wifi Settings");
+  wm.resetSettings();
+  eraseBsecState();
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -593,33 +605,33 @@ void resetToFactorySettings(){
 // ++++++++++++++++++++++++++++++++++++ SPS30 +++++++++++++++++++++++++++++++++++
 
 
-bool initSPS30(){
-   int16_t ret;
-    sensirion_i2c_init();
-    int cnt = 0;
-    Serial.print("Initializing SPS30 .... ");
-    while (sps30_probe() != 0) {
-     // Serial.print("SPS sensor probing failed\n");
-      delay(500);
-      cnt++;
-      if (cnt > 2){
-        Serial.println("ERROR - SPS sensor probing failed");
-        return false;
-      }
-    }
-    Serial.println("OK");
-   
-   ret = sps30_set_fan_auto_cleaning_interval_days(4);
-    if (ret) {
-      Serial.print("ERROR, unable to set the auto-clean interval: ");
-      Serial.println(ret);
+bool initSPS30() {
+  int16_t ret;
+  sensirion_i2c_init();
+  int cnt = 0;
+  Serial.print("Initializing SPS30 .... ");
+  while (sps30_probe() != 0) {
+    // Serial.print("SPS sensor probing failed\n");
+    delay(500);
+    cnt++;
+    if (cnt > 2) {
+      Serial.println("ERROR - SPS sensor probing failed");
       return false;
-    }  
+    }
+  }
+  Serial.println("OK");
 
-    // start measuring
+  ret = sps30_set_fan_auto_cleaning_interval_days(4);
+  if (ret) {
+    Serial.print("ERROR, unable to set the auto-clean interval: ");
+    Serial.println(ret);
+    return false;
+  }
+
+  // start measuring
   ret = sps30_start_measurement();
   if (ret < 0) {
-    Serial.println("ERROR, starting measurement\n");    
+    Serial.println("ERROR, starting measurement\n");
   }
 
   return true;
@@ -627,30 +639,30 @@ bool initSPS30(){
 
 // +++++++++++++++++++++++++++++++ BME680 / BSEC ++++++++++++++++++++++++++++++++
 
-bool initBME680(){
-  Serial.print("Initializing BME680 ... ");  
+bool initBME680() {
+  Serial.print("Initializing BME680 ... ");
   //iaqSensor.begin(BME680_I2C_ADDR_SECONDARY,Wire);  
 
   int address = 0x76;
   // check for address 0x77 
-  
-   Wire.beginTransmission(address);
-   if(Wire.endTransmission()!=0){ 
-      address = 0x77;
-      Wire.beginTransmission(address);
-      if(Wire.endTransmission()!=0){ 
-        Serial.println("ERROR");
-        return false;
-      }
-   }
-  
-  iaqSensor.begin(address,Wire);  
-  if (!checkIaqSensorStatus()){
+
+  Wire.beginTransmission(address);
+  if (Wire.endTransmission() != 0) {
+    address = 0x77;
+    Wire.beginTransmission(address);
+    if (Wire.endTransmission() != 0) {
+      Serial.println("ERROR");
+      return false;
+    }
+  }
+
+  iaqSensor.begin(address, Wire);
+  if (!checkIaqSensorStatus()) {
     Serial.println("ERROR");
     evalIaqSensorStatus();
     return false;
   }
-  
+
   bsec_virtual_sensor_t sensorList[10] = {
     BSEC_OUTPUT_RAW_TEMPERATURE,
     BSEC_OUTPUT_RAW_PRESSURE,
@@ -663,105 +675,107 @@ bool initBME680(){
     BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
     BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
   };
-  
+
   iaqSensor.updateSubscription(sensorList, 10, BSEC_SAMPLE_RATE_LP);
-  
-  if (!checkIaqSensorStatus()){
+
+  if (!checkIaqSensorStatus()) {
     Serial.println("ERROR");
     evalIaqSensorStatus();
     return false;
   }
-  
+
   Serial.println("OK");
   String output = "BSEC library version " + String(iaqSensor.version.major) + "." + String(iaqSensor.version.minor) + "." + String(iaqSensor.version.major_bugfix) + "." + String(iaqSensor.version.minor_bugfix);
-  Serial.println(output);  
+  Serial.println(output);
 
   loadBsecState();
   return true;
 }
 
-bool checkBsecState(){
-  for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++) {   
-      if (bsecState[i]!=0xFF) {
-        return true;
-      }
+bool checkBsecState() {
+  for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++) {
+    if (bsecState[i] != 0xFF) {
+      return true;
+    }
   }
   return false;
 }
 
-bool sensorsAvailable(){
+bool sensorsAvailable() {
   return bme280_available || bme680_available || scd30_available || sps30_available;
 }
 
-void eraseBsecState(){
+void eraseBsecState() {
   bool success = true;
   Serial.print("Erasing BSEC state ...");
   for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE + 1; i++) {
-      bsecStateMemory.write(i, 0xFF);      
-        success = success && bsecStateMemory.commit();
-        bsecState[i]=0xFF;      
-  }    
-  if(success){
+    bsecStateMemory.write(i, 0xFF);
+    success = success && bsecStateMemory.commit();
+    bsecState[i] = 0xFF;
+  }
+  if (success) {
     Serial.println("OK");
-  } else {
+  }
+  else {
     Serial.println("Error");
   }
-  
+
   printBsecState();
 }
 
-bool loadBsecState(){
+bool loadBsecState() {
   getBsecState();
   Serial.print("Reading BSEC state from EEPROM .... ");
-  bsecStateMemory.get(0,bsecState);  
+  bsecStateMemory.get(0, bsecState);
   Serial.println("OK");
   printBsecState();
   Serial.print("Checking BSEC state ............... ");
-  if (!checkBsecState()){
+  if (!checkBsecState()) {
     Serial.println("ERROR");
     Serial.println("Not a valid BSEC state, State was propably never saved before and will be ignored");
     return false;
   }
-  Serial.println("OK"); 
+  Serial.println("OK");
   Serial.print("Setting BSEC state ................ ");
-  iaqSensor.setState(bsecState);  
+  iaqSensor.setState(bsecState);
   Serial.println("OK");
   Serial.println("Reading State from BSEC again");
   getBsecState();
   return true;
 }
 
-void getBsecState(){ 
+void getBsecState() {
   iaqSensor.getState(bsecState);
   printBsecState();
 }
 
-void printBsecState(){
+void printBsecState() {
   Serial.print("BSEC State : ");
-  for (int i = 0; i < BSEC_MAX_STATE_BLOB_SIZE+1; i++){
+  for (int i = 0; i < BSEC_MAX_STATE_BLOB_SIZE + 1; i++) {
     Serial.print(bsecState[i], HEX);
     Serial.print(" ");
   }
   Serial.println();
 }
 
-bool saveBsecState(){
+bool saveBsecState() {
   getBsecState();
   Serial.print("Writing BSEC state to EEPROM .... ");
-  if (!checkIaqSensorStatus()){
+  if (!checkIaqSensorStatus()) {
     Serial.println("ERROR");
     evalIaqSensorStatus();
     return false;
-  }  
+  }
   bsecStateMemory.put(0, bsecState);
   if (bsecStateMemory.commit()) {
-     Serial.println("OK");
-  } else {
-     Serial.println("ERROR");    
-     Serial.println("BSEC State (calibration data) could not be saved");    
-     return false;
+    Serial.println("OK");
   }
-  return true;  
+  else {
+    Serial.println("ERROR");
+    Serial.println("BSEC State (calibration data) could not be saved");
+    return false;
+  }
+  return true;
 }
 
 
@@ -769,68 +783,73 @@ bool checkIaqSensorStatus(void) {
   return (iaqSensor.status == BSEC_OK);
 }
 
-void evalIaqSensorStatus(){ {
+void evalIaqSensorStatus() {
+  {
     String output;
     if (iaqSensor.status == BSEC_OK) {
-      output = "BSEC OK : " + String(iaqSensor.status);            
-    } else { 
+      output = "BSEC OK : " + String(iaqSensor.status);
+    }
+    else {
       if (iaqSensor.status < BSEC_OK) {
-        output = "BSEC error code : " + String(iaqSensor.status);            
-      } else {
-        output = "BSEC warning code : " + String(iaqSensor.status);      
+        output = "BSEC error code : " + String(iaqSensor.status);
+      }
+      else {
+        output = "BSEC warning code : " + String(iaqSensor.status);
       }
     }
-    Serial.println(output); 
+    Serial.println(output);
 
     if (iaqSensor.bme680Status != BME680_OK) {
       output = "BME680 error code : " + String(iaqSensor.bme680Status);
-    } else {
+    }
+    else {
       if (iaqSensor.bme680Status < BME680_OK) {
-        output = "BME680 error code : " + String(iaqSensor.bme680Status);          
-      } else {
-        output = "BME680 warning code : " + String(iaqSensor.bme680Status);      
+        output = "BME680 error code : " + String(iaqSensor.bme680Status);
+      }
+      else {
+        output = "BME680 warning code : " + String(iaqSensor.bme680Status);
       }
     }
-    Serial.println(output);      
+    Serial.println(output);
   }
 }
 
 
-bool isIaqCalibrated(){
-  return (iaq_accuracy!=IAQA_NOT_CALIBRATED);
+bool isIaqCalibrated() {
+  return (iaq_accuracy != IAQA_NOT_CALIBRATED);
 }
 
-void evalIaqAccuracy(){ 
-  if (iaq_accuracy == iaqSensor.iaqAccuracy){
+void evalIaqAccuracy() {
+  if (iaq_accuracy == iaqSensor.iaqAccuracy) {
     return;
   }
   Serial.println("New IAQ Accuracy detected");
   iaq_accuracy = iaqSensor.iaqAccuracy;
-  switch (iaq_accuracy){
-        case IAQA_NOT_CALIBRATED:      
-             // do nothing
-             break;  
-        case IAQA_UNCERTAIN:
-             // at least sensor is calibrated and delivers CO2 equivalents
-             handleIaqCalibrationEvent();
-             break;
-        case IAQA_CALIBRATING:             
-             break;
-        case IAQA_CALIBRATION_COMPLETE:
-              // fully calibrated, should be saved
-             handleIaqCalibrationEvent();
-             break;
-        default:
-             // unknown state   
-             // does not need to be handled
-             break;
+  switch (iaq_accuracy) {
+  case IAQA_NOT_CALIBRATED:
+    // do nothing
+    break;
+  case IAQA_UNCERTAIN:
+    // at least sensor is calibrated and delivers CO2 equivalents
+    handleIaqCalibrationEvent();
+    break;
+  case IAQA_CALIBRATING:
+    break;
+  case IAQA_CALIBRATION_COMPLETE:
+    // fully calibrated, should be saved
+    handleIaqCalibrationEvent();
+    break;
+  default:
+    // unknown state   
+    // does not need to be handled
+    break;
   }
 }
 
-void handleIaqCalibrationEvent(){
+void handleIaqCalibrationEvent() {
   saveBsecState();
   // only success gauge when switching from IAQA_NOT_CALIBRATED to IAQA_UNCERTAIN. 
-  if (iaq_accuracy == IAQA_UNCERTAIN){
+  if (iaq_accuracy == IAQA_UNCERTAIN) {
     successGauge();
   }
   lastPropertyUpdate = 0;
@@ -839,56 +858,58 @@ void handleIaqCalibrationEvent(){
   refreshGauge();
 }
 
-void printIAQdata(){
-   String output = "raw temperature [°C], pressure [hPa], raw relative humidity [%], gas [Ohm], IAQ, IAQ accuracy, temperature [°C], relative humidity [%], Static IAQ, CO2 equivalent, breath VOC equivalent";
-   Serial.println(output);   
-   output = String(iaqSensor.rawTemperature);
-   output += ", " + String(iaqSensor.pressure);
-   output += ", " + String(iaqSensor.rawHumidity);
-   output += ", " + String(iaqSensor.gasResistance);
-   output += ", " + String(iaqSensor.iaq);
-   output += ", " + String(iaqSensor.iaqAccuracy);
-   output += ", " + String(iaqSensor.temperature);
-   output += ", " + String(iaqSensor.humidity);
-   output += ", " + String(iaqSensor.staticIaq);
-   output += ", " + String(iaqSensor.co2Equivalent);
-   output += ", " + String(iaqSensor.breathVocEquivalent);
-   Serial.println(output);
+void printIAQdata() {
+  String output = "raw temperature [°C], pressure [hPa], raw relative humidity [%], gas [Ohm], IAQ, IAQ accuracy, temperature [°C], relative humidity [%], Static IAQ, CO2 equivalent, breath VOC equivalent";
+  Serial.println(output);
+  output = String(iaqSensor.rawTemperature);
+  output += ", " + String(iaqSensor.pressure);
+  output += ", " + String(iaqSensor.rawHumidity);
+  output += ", " + String(iaqSensor.gasResistance);
+  output += ", " + String(iaqSensor.iaq);
+  output += ", " + String(iaqSensor.iaqAccuracy);
+  output += ", " + String(iaqSensor.temperature);
+  output += ", " + String(iaqSensor.humidity);
+  output += ", " + String(iaqSensor.staticIaq);
+  output += ", " + String(iaqSensor.co2Equivalent);
+  output += ", " + String(iaqSensor.breathVocEquivalent);
+  Serial.println(output);
 }
 
 // +++++++++++++++++++++++++++++++++++ BME280 +++++++++++++++++++++++++++++++++++
 
-bool initBME280(){
+bool initBME280() {
   Serial.print("Initializing BME280 ... ");
   bool res = bme280.begin(BME280_ADDRESS_ALTERNATE, &Wire);
-  if (res){
+  if (res) {
     Serial.println("OK");
-  } else {
+  }
+  else {
     Serial.println("ERROR");
     Serial.print("No BME280 found on I2C wiring with address ");
-    Serial.println(BME280_ADDRESS_ALTERNATE);    
+    Serial.println(BME280_ADDRESS_ALTERNATE);
   }
   return res;
 }
 
 // +++++++++++++++++++++++++++++++++++ SCD30 +++++++++++++++++++++++++++++++++++
 
-bool initSCD30(){
+bool initSCD30() {
   Serial.print("Initializing SCD30 .... ");
   bool res = scd30.begin();
   if (res) {
     Serial.println("OK");
-    printScd30Configuration();  
-    
-  } else {
+    printScd30Configuration();
+
+  }
+  else {
     Serial.println("ERROR");
     Serial.println("No SCD30 sensor found on I2C wire");
   }
-  
+
   return res;
 }
 
-bool printScd30Configuration(){  
+bool printScd30Configuration() {
   Serial.println("---------------------- SCD30 Configuration ------------------------");
   Serial.print("Measurement interval: ");
   Serial.print(scd30.getMeasurementInterval());
@@ -900,14 +921,15 @@ bool printScd30Configuration(){
   Serial.print(scd30.getAltitudeOffset());
   Serial.println(" meters");
   Serial.print("Temperature offset: ");
-  Serial.print((float)scd30.getTemperatureOffset()/100.0);
+  Serial.print((float)scd30.getTemperatureOffset() / 100.0);
   Serial.println(" degrees C");
   Serial.print("Forced Recalibration reference: ");
   Serial.print(scd30.getForcedCalibrationReference());
   Serial.println(" ppm");
-    if (scd30.selfCalibrationEnabled()) {
+  if (scd30.selfCalibrationEnabled()) {
     Serial.println("Self calibration enabled");
-  } else {
+  }
+  else {
     Serial.println("Self calibration disabled");
   }
 
@@ -915,84 +937,88 @@ bool printScd30Configuration(){
 }
 // +++++++++++++++++++++++++++ updating Sensor values ++++++++++++++++++++++++++++
 
-bool isValueChangeTimeout(){
-  if (!sensorsAvailable()){
+bool isValueChangeTimeout() {
+  if (!sensorsAvailable()) {
     return false;
   }
   return (millis() - lastValueChange > valueChangeTimeout);
 }
 
-bool readParticles(){
+bool readParticles() {
   char serial[SPS30_MAX_SERIAL_LEN];
   uint16_t data_ready;
   int16_t ret;
   Serial.println("Reading particle values");
   ret = sps30_read_data_ready(&data_ready);
   if (ret < 0) {
-      Serial.print("error reading data-ready flag: ");
-      Serial.println(ret);
-      return false;
+    Serial.print("error reading data-ready flag: ");
+    Serial.println(ret);
+    return false;
   };
-    
-  if (!data_ready){
+
+  if (!data_ready) {
     Serial.println("SPS30 data not ready yet");
     return false;
   }
-   
+
   // data ready
   ret = sps30_read_measurement(&m);
   if (ret < 0) {
     Serial.print("error reading measurement\n");
     return false;
-  } 
+  }
 
-    Serial.print("PM  1.0: ");
-    Serial.println(m.mc_1p0);
-    Serial.print("PM  2.5: ");
-    Serial.println(m.mc_2p5);
-    Serial.print("PM  4.0: ");
-    Serial.println(m.mc_4p0);
-    Serial.print("PM 10.0: ");
-    Serial.println(m.mc_10p0);
-    Serial.print("NC  0.5: ");
-    Serial.println(m.nc_0p5);
-    Serial.print("NC  1.0: ");
-    Serial.println(m.nc_1p0);
-    Serial.print("NC  2.5: ");
-    Serial.println(m.nc_2p5);
-    Serial.print("NC  4.0: ");
-    Serial.println(m.nc_4p0);
-    Serial.print("NC 10.0: ");
-    Serial.println(m.nc_10p0);
+  Serial.print("PM  1.0: ");
+  Serial.println(m.mc_1p0);
+  Serial.print("PM  2.5: ");
+  Serial.println(m.mc_2p5);
+  Serial.print("PM  4.0: ");
+  Serial.println(m.mc_4p0);
+  Serial.print("PM 10.0: ");
+  Serial.println(m.mc_10p0);
+  Serial.print("NC  0.5: ");
+  Serial.println(m.nc_0p5);
+  Serial.print("NC  1.0: ");
+  Serial.println(m.nc_1p0);
+  Serial.print("NC  2.5: ");
+  Serial.println(m.nc_2p5);
+  Serial.print("NC  4.0: ");
+  Serial.println(m.nc_4p0);
+  Serial.print("NC 10.0: ");
+  Serial.println(m.nc_10p0);
 
-    Serial.print("Typical partical size: ");
-    Serial.println(m.typical_particle_size);
+  Serial.print("Typical partical size: ");
+  Serial.println(m.typical_particle_size);
   return true;
 }
 
-void readTemperatureHumidity(){  
+void readTemperatureHumidity() {
   if (!sensorsAvailable()) {
     return;
   }
- 
- 
+
+
   float newTemperature;
   float newHumidity = 0.0;
-  
 
-  if (scd30_available){
+
+  if (scd30_available) {
     newHumidity = int(scd30.relative_humidity);
-  } else if (bme680_available){
+  }
+  else if (bme680_available) {
     newHumidity = int(iaqSensor.humidity);
-  } else if (bme280_available){
+  }
+  else if (bme280_available) {
     newHumidity = int(bme280.readHumidity()); // ignore values after . 
   }
-  
-  if (bme680_available){
+
+  if (bme680_available) {
     newTemperature = iaqSensor.temperature;  // use 0.5 steps for temperature  
-  } else if (bme280_available) {
+  }
+  else if (bme280_available) {
     newTemperature = bme280.readTemperature();  // use 0.5 steps for temperature  
-  } else if (scd30_available){
+  }
+  else if (scd30_available) {
     newTemperature = scd30.temperature;  // use 0.5 steps for temperature  
     // adding the offset - this is only needed for connctd FRAME setup to compensate ESP32 heat
     float temp = newTemperature;
@@ -1007,27 +1033,27 @@ void readTemperatureHumidity(){
     if (newHumidity < 85) {
       float dewPoint = calcDewPoint(temp, newHumidity);
       Serial.print(" -> ");
-      newHumidity = round(calcTargetHumidity(dewPoint, newTemperature));   
+      newHumidity = round(calcTargetHumidity(dewPoint, newTemperature));
       Serial.println(newHumidity);
     }
-  } 
-
-  newTemperature = int(newTemperature *2)/2; // 0.5 accuracy
-  
-  if (humidity != newHumidity){
-    lastValueChange = millis();
-    humidity = newHumidity;  
   }
 
-  
-  if (temperature != newTemperature){
+  newTemperature = int(newTemperature * 2) / 2; // 0.5 accuracy
+
+  if (humidity != newHumidity) {
+    lastValueChange = millis();
+    humidity = newHumidity;
+  }
+
+
+  if (temperature != newTemperature) {
     lastValueChange = millis();
     temperature = newTemperature;
-  }   
+  }
 }
 
 
-float calcDewPoint(float temperature, float humidity){
+float calcDewPoint(float temperature, float humidity) {
   float dewPoint = 0.0;
   float vapPres = calcVaporPressure(temperature, humidity);
 
@@ -1037,24 +1063,24 @@ float calcDewPoint(float temperature, float humidity){
 
   float v = log10(vapPres / 6.1078);
   return (237.3 * v) / (7.5 - v);
-  
+
 }
 
-float calcVaporPressure(float temperature,float humidity){
+float calcVaporPressure(float temperature, float humidity) {
   return humidity / 100 * calcSaturatedVaporPressure(temperature);
 }
 
-float calcSaturatedVaporPressure(float temperature){
-  return 6.1078 * pow(10, ((7.5*temperature)/(237.3+temperature)));
+float calcSaturatedVaporPressure(float temperature) {
+  return 6.1078 * pow(10, ((7.5 * temperature) / (237.3 + temperature)));
 }
 
 
-float calcAbsoluteHumidity(float temperature, float humidity){
+float calcAbsoluteHumidity(float temperature, float humidity) {
   return pow(10, 5) * 18.016 / 8314.3 * (calcVaporPressure(temperature, humidity) / (273.15 + temperature));
 }
 
 
-float calcTargetHumidity(float dewPoint, float targetTemperature){
+float calcTargetHumidity(float dewPoint, float targetTemperature) {
   float hum = 100 * calcSaturatedVaporPressure(dewPoint) / calcSaturatedVaporPressure(targetTemperature);
   if (hum > 100) {
     return 100.0;
@@ -1063,17 +1089,18 @@ float calcTargetHumidity(float dewPoint, float targetTemperature){
 }
 
 
-bool readPressure(){
+bool readPressure() {
   if (!sensorsAvailable()) {
     return false;
   }
-  float newPressure =0.0;
-  if (bme680_available){
-    newPressure = int(iaqSensor.pressure)/100;
-  } else if (bme280_available){
-    newPressure = int(bme280.readPressure())/100; 
+  float newPressure = 0.0;
+  if (bme680_available) {
+    newPressure = int(iaqSensor.pressure) / 100;
   }
-  
+  else if (bme280_available) {
+    newPressure = int(bme280.readPressure()) / 100;
+  }
+
   if (pressure != newPressure) {
     lastValueChange = millis();
     pressure = newPressure;
@@ -1081,110 +1108,110 @@ bool readPressure(){
     Serial.println(pressure);
     return true;
   }
-  
+
   return false;
 }
 
-bool readCo2Equivalent(){
-  if (bme680_available){
-    if (iaqSensor.iaqAccuracy==0){
+bool readCo2Equivalent() {
+  if (bme680_available) {
+    if (iaqSensor.iaqAccuracy == 0) {
       // sensor not calibrated yet
       return false;
     }
     float newCo2 = int(iaqSensor.co2Equivalent);
-    
-    if (newCo2 != co2){
+
+    if (newCo2 != co2) {
       lastValueChange = millis();
-      co2 = newCo2;  
+      co2 = newCo2;
       Serial.print("Co2 equivalent = ");
       Serial.print(co2);
       Serial.println(" ppm");
       return true;
-     }
+    }
   }
   return false;
 }
 
-bool readCo2(){
-  if (!scd30_available){
+bool readCo2() {
+  if (!scd30_available) {
     return false;
   }
-   float newCo2 = int(scd30.CO2);
-   if (newCo2 != co2){
+  float newCo2 = int(scd30.CO2);
+  if (newCo2 != co2) {
     lastValueChange = millis();
     co2 = newCo2;
     Serial.print("CO2 value = ");
     Serial.print(co2);
     Serial.println(" ppm");
     return true;
-   }
-   return false;
+  }
+  return false;
 }
 
 // +++++++++++++++++++++++++++++++++++ Button +++++++++++++++++++++++++++++++++++
 
 
-void checkButton(){  
-  
-  if(isButtonPressed()){     
-      if (!buttonPressed){ 
-        onButtonPressed();
-      } 
-  }    
+void checkButton() {
+
+  if (isButtonPressed()) {
+    if (!buttonPressed) {
+      onButtonPressed();
+    }
+  }
 
   if (buttonPressed) {
-    if (!isButtonPressed()){
-        onButtonReleased();
-        return;
-    }    
+    if (!isButtonPressed()) {
+      onButtonReleased();
+      return;
+    }
     long pressedMillis = millis() - buttonPressMillis;
-    if(pressedMillis >= 15000){
-      
+    if (pressedMillis >= 15000) {
+
       resetToFactorySettings();
-      blinkRing(CRGB(255,0,0));     
+      blinkRing(CRGB(255, 0, 0));
       restart();
       return;
     }
-    if(pressedMillis >= 10000){
-      setRingColor(CRGB(255,0,0));
-      return; 
+    if (pressedMillis >= 10000) {
+      setRingColor(CRGB(255, 0, 0));
+      return;
     }
-    if (pressedMillis >= 5000){
-      setRingColor(CRGB(0,255,0));
+    if (pressedMillis >= 5000) {
+      setRingColor(CRGB(0, 255, 0));
     }
   }
 }
 
 
-void onButtonPressed(){
-   Serial.println("Button pressed");
-   buttonPressed = true;
-   buttonPressMillis = millis();         
+void onButtonPressed() {
+  Serial.println("Button pressed");
+  buttonPressed = true;
+  buttonPressMillis = millis();
 }
 
-void onButtonReleased(){
-   long pressedMillis = millis() - buttonPressMillis;
- 
-   buttonPressed = false;
-  
-   Serial.print("Button released (");
-   Serial.print(pressedMillis);
-   Serial.println("ms)");  
+void onButtonReleased() {
+  long pressedMillis = millis() - buttonPressMillis;
 
-   if (pressedMillis <= 1500) {   
-      triggerGaugeDimmLevel();
-      return;
-   }
-   if ((pressedMillis >= 5000) && (pressedMillis < 10000)){
-        startWiFiConfiguration(120);       
-   }
-   clearRing();
-   refreshGauge();
+  buttonPressed = false;
+
+  Serial.print("Button released (");
+  Serial.print(pressedMillis);
+  Serial.println("ms)");
+
+  if (pressedMillis <= 1500) {
+    triggerGaugeDimmLevel();
+    return;
+  }
+  if ((pressedMillis >= 5000) && (pressedMillis < 10000)) {
+    startWiFiConfiguration(120);
+  }
+  clearRing();
+  refreshGauge();
 }
 
 
-bool isButtonPressed(){
-  return  digitalRead(TRIGGER_PIN) == LOW ;
+bool isButtonPressed() {
+  return  digitalRead(TRIGGER_PIN) == LOW;
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -1194,201 +1221,201 @@ bool isButtonPressed(){
 
 // requestes a session id from connector which will be exchanged in every
 // message to prevent replay attacks. Can be called multiple times
-void initMarconiSession() {  
+void initMarconiSession() {
   if (marconiSessionInitialized) {
     return;
   }
-  Serial.println("Initializing session");  
-    
+  Serial.println("Initializing session");
+
   marconiInitTryCnt++;
   marconiClient->init();
 }
 
 
-void sendHumidityValue(){
-  if (!marconiSessionInitialized){
+void sendHumidityValue() {
+  if (!marconiSessionInitialized) {
     return;
   }
   marconiClient->sendFloatPropertyUpdate(property_humidity, humidity);
 }
 
-void sendTemperatureValue(){
-  if (!marconiSessionInitialized){
+void sendTemperatureValue() {
+  if (!marconiSessionInitialized) {
     return;
   }
-   marconiClient->sendFloatPropertyUpdate(property_temperature, temperature);
+  marconiClient->sendFloatPropertyUpdate(property_temperature, temperature);
 }
 
-void sendPressureValue(){
-  if (!marconiSessionInitialized){
+void sendPressureValue() {
+  if (!marconiSessionInitialized) {
     return;
   }
- marconiClient->sendFloatPropertyUpdate(property_pressure, pressure);
+  marconiClient->sendFloatPropertyUpdate(property_pressure, pressure);
 }
 
-void sendCo2Value(){
-  if (!marconiSessionInitialized){
+void sendCo2Value() {
+  if (!marconiSessionInitialized) {
     return;
   }
- marconiClient->sendFloatPropertyUpdate(property_co2, co2);
+  marconiClient->sendFloatPropertyUpdate(property_co2, co2);
 }
 
-void sendParticleValues(){
-   if (!marconiSessionInitialized){
+void sendParticleValues() {
+  if (!marconiSessionInitialized) {
     return;
   }
-  marconiClient->sendFloatPropertyUpdate(property_particle_1pm   , m.mc_1p0);
-  marconiClient->sendFloatPropertyUpdate(property_particle_2pm5  , m.mc_2p5);
-  marconiClient->sendFloatPropertyUpdate(property_particle_4pm   , m.mc_4p0);
-  marconiClient->sendFloatPropertyUpdate(property_particle_10pm  , m.mc_10p0);
-  marconiClient->sendFloatPropertyUpdate(property_particle_1nc   , m.nc_1p0);
-  marconiClient->sendFloatPropertyUpdate(property_particle_2nc5  , m.nc_2p5);
-  marconiClient->sendFloatPropertyUpdate(property_particle_4nc   , m.nc_4p0);
-  marconiClient->sendFloatPropertyUpdate(property_particle_10nc  , m.nc_10p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_1pm, m.mc_1p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_2pm5, m.mc_2p5);
+  marconiClient->sendFloatPropertyUpdate(property_particle_4pm, m.mc_4p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_10pm, m.mc_10p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_1nc, m.nc_1p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_2nc5, m.nc_2p5);
+  marconiClient->sendFloatPropertyUpdate(property_particle_4nc, m.nc_4p0);
+  marconiClient->sendFloatPropertyUpdate(property_particle_10nc, m.nc_10p0);
 }
 
-void sendGaugeDimmLevelValue(){
-  if (!marconiSessionInitialized){
+void sendGaugeDimmLevelValue() {
+  if (!marconiSessionInitialized) {
     return;
   }
-   marconiClient->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
+  marconiClient->sendFloatPropertyUpdate(property_dimmlevel, dimmLevel);
 }
 
-void sendGaugeValue(){
-  if (!marconiSessionInitialized){
+void sendGaugeValue() {
+  if (!marconiSessionInitialized) {
     return;
   }
-   marconiClient->sendFloatPropertyUpdate(property_gauge, gaugeValue);
+  marconiClient->sendFloatPropertyUpdate(property_gauge, gaugeValue);
 }
 
-void sendWarningLedState(){
-  if (!marconiSessionInitialized){
+void sendWarningLedState() {
+  if (!marconiSessionInitialized) {
     return;
   }
   marconiClient->sendBooleanPropertyUpdate(property_indicator, warningLedOn);
 }
 
 // called whenever an action is invoked
-void onAction(unsigned char actionId, char *value) {
+void onAction(unsigned char actionId, char* value) {
   lastActionReceived = millis();
   Serial.printf("Action called. Id: %x Value: %s\n", actionId, value);
-  switch (actionId){
-    case actionID_gaugeValue:
-      setGaugePercentage(String(value).toInt());
-      break;
-    case actionID_dimmLevel:
-      setGaugeDimmLevel(String(value).toFloat()*100);
-      break;
-    case actionID_indicator:
-      setWarningLed(value[0] == 0x31);
-      break;
-     default :
-        Serial.println("no matching Action found");
-     break;
+  switch (actionId) {
+  case actionID_gaugeValue:
+    setGaugePercentage(String(value).toInt());
+    break;
+  case actionID_dimmLevel:
+    setGaugeDimmLevel(String(value).toFloat() * 100);
+    break;
+  case actionID_indicator:
+    setWarningLed(value[0] == 0x31);
+    break;
+  default:
+    Serial.println("no matching Action found");
+    break;
   }
 }
 
 // called whenever marconi lib sends debug data
-void onDebug(const char *msg) {
-    Serial.printf("[DEBUG] %s\n", msg);
-} 
+void onDebug(const char* msg) {
+  Serial.printf("[DEBUG] %s\n", msg);
+}
 
 // called whenever connection state changes
 void onConnectionStateChange(const unsigned char state) {
-    Serial.print("[CON] ");
-    switch (state) {
-      case kConnectionStateInitialized:
-        Serial.println("Session was Initialized");
+  Serial.print("[CON] ");
+  switch (state) {
+  case kConnectionStateInitialized:
+    Serial.println("Session was Initialized");
 
-        // enforce resubscription
-        lastResubscribe = 0;
+    // enforce resubscription
+    lastResubscribe = 0;
 
-        // prevent observation timeout right after initialization was done
-        lastObservationOngoingEventReceived = millis();
-        
-        marconiSessionInitialized = true;
-        marconiInitTryCnt = 0;
-        break;
-      case kConnectionStateUninitialized:
-        Serial.println("Session initialization ongoing");
-        marconiSessionInitialized = false;
-        break;
-      case kConnectionStateInitRejected:
-        Serial.println("Session initialization has failed");
-        marconiSessionInitialized = false;   
-        errorRing(ERR_MARCONI_SESSION);     
-        break;
-      case kConnectionObservationRequested:
-        Serial.println("Observation was requested");
-        break;
-      case kConnectionObservationOngoing:
-        Serial.println("Observation is now ongoing");
-        lastObservationOngoingEventReceived = millis();         
-        marconiSessionInitialized = true;
-        break;
-      case kConnectionObservationRejected:
-        Serial.println("Observation was rejected");
+    // prevent observation timeout right after initialization was done
+    lastObservationOngoingEventReceived = millis();
 
-        // reinit session in case connector was restarted
-        marconiSessionInitialized = false;
-        // after reinit we want to resubscribe
-        lastResubscribe = 0;
-        errorRing(ERR_MARCONI_SESSION);
-        break;
-      default:
-        Serial.printf("Unknown connection event %x\n", state);
-        break;
-    }
-    refreshGauge();
+    marconiSessionInitialized = true;
+    marconiInitTryCnt = 0;
+    break;
+  case kConnectionStateUninitialized:
+    Serial.println("Session initialization ongoing");
+    marconiSessionInitialized = false;
+    break;
+  case kConnectionStateInitRejected:
+    Serial.println("Session initialization has failed");
+    marconiSessionInitialized = false;
+    errorRing(ERR_MARCONI_SESSION);
+    break;
+  case kConnectionObservationRequested:
+    Serial.println("Observation was requested");
+    break;
+  case kConnectionObservationOngoing:
+    Serial.println("Observation is now ongoing");
+    lastObservationOngoingEventReceived = millis();
+    marconiSessionInitialized = true;
+    break;
+  case kConnectionObservationRejected:
+    Serial.println("Observation was rejected");
+
+    // reinit session in case connector was restarted
+    marconiSessionInitialized = false;
+    // after reinit we want to resubscribe
+    lastResubscribe = 0;
+    errorRing(ERR_MARCONI_SESSION);
+    break;
+  default:
+    Serial.printf("Unknown connection event %x\n", state);
+    break;
+  }
+  refreshGauge();
 }
 
 // called whenever an error occurs in marconi lib
 void onErr(const unsigned char error) {
-    Serial.printf("[ERROR] ");
-    switch (error) {
-        case kErrorInvalidPlaintextSize:
-            Serial.println("Plaintext size too small");
-            break;
-        case kErrorInvalidCipherstreamSize:
-            Serial.println("Encryption failed. Cipherstream too small");
-            break;
-        case kErrorActionRequestRejected:
-            Serial.println("Received action request was rejected");
-            break;
-        case kErrorDecryptionFailed:
-            Serial.println("Decryption error");
-            break;
-        case kErrorEncryptionFailed:
-            Serial.println("Encryption error");
-            break;
-        default:
-            Serial.printf("Unknown error event %x\n", error);
-            break;
-    }
-   refreshGauge();
+  Serial.printf("[ERROR] ");
+  switch (error) {
+  case kErrorInvalidPlaintextSize:
+    Serial.println("Plaintext size too small");
+    break;
+  case kErrorInvalidCipherstreamSize:
+    Serial.println("Encryption failed. Cipherstream too small");
+    break;
+  case kErrorActionRequestRejected:
+    Serial.println("Received action request was rejected");
+    break;
+  case kErrorDecryptionFailed:
+    Serial.println("Decryption error");
+    break;
+  case kErrorEncryptionFailed:
+    Serial.println("Encryption error");
+    break;
+  default:
+    Serial.printf("Unknown error event %x\n", error);
+    break;
+  }
+  refreshGauge();
 }
 
-bool isObservationTimeout() { 
- 
+bool isObservationTimeout() {
+
   return (millis() - lastObservationOngoingEventReceived > observationTimeout);
 }
 
-bool isActionTimeout(){
-  
+bool isActionTimeout() {
+
   return (millis() - lastActionReceived > actionReceiveTimeout);
 }
 
-bool resolveMarconiIp(){
+bool resolveMarconiIp() {
   Serial.print("Resolving IP address for ");
   Serial.print(marconiUrl);
-  Serial.print("  ...  ");  
-  if (!WiFi.hostByName(marconiUrl, marconiIp) == 1) { 
-      Serial.println("ERROR");
-      Serial.println("unable to resolve marconiUrl");
-      return false;
+  Serial.print("  ...  ");
+  if (!WiFi.hostByName(marconiUrl, marconiIp) == 1) {
+    Serial.println("ERROR");
+    Serial.println("unable to resolve marconiUrl");
+    return false;
   }
   Serial.println("OK");
-  Serial.printf("Marconi-UDP IP Address : %d.%d.%d.%d\n", marconiIp[0], marconiIp[1], marconiIp[2], marconiIp[3]);  
+  Serial.printf("Marconi-UDP IP Address : %d.%d.%d.%d\n", marconiIp[0], marconiIp[1], marconiIp[2], marconiIp[3]);
   return true;
 }
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -1396,65 +1423,66 @@ bool resolveMarconiIp(){
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-void initializeWiFi(){   
+void initializeWiFi() {
   //wm.setSaveParamsCallback(saveParamCallback);
-  std::vector<const char *> menu = {"wifi","info","sep","restart","exit"};
-  wm.setMenu(menu);  
+  std::vector<const char*> menu = { "wifi","info","sep","restart","exit" };
+  wm.setMenu(menu);
   wm.setClass("invert");
   wm.setAPCallback(configModeCallback);
   wm.setConfigPortalTimeout(300);
 }
- 
-bool connectToWiFi(){
+
+bool connectToWiFi() {
   bool res;
-  res = wm.autoConnect(AP_SSID,NULL); 
-  if(!res) {
+  res = wm.autoConnect(AP_SSID, NULL);
+  if (!res) {
     Serial.println("Failed to connect or hit timeout");
     //errorRing();  
-  } else {
+  }
+  else {
     //if you get here you have connected to the WiFi    
     Serial.print("connected to ");
-    Serial.println(wm.getWiFiSSID());   
+    Serial.println(wm.getWiFiSSID());
     successRing();
   }
   return res;
 }
 
-void startWiFiConfiguration(int timeout){
+void startWiFiConfiguration(int timeout) {
   Serial.print("Starting config portal (");
   Serial.print(timeout);
   Serial.println("s)");
-  wm.setConfigPortalTimeout(timeout);     
-  if (!wm.startConfigPortal(AP_SSID,NULL)) {
-     Serial.println("ERROR - failed to connect or hit timeout");          
-      //errorRing();                 
-  }      
+  wm.setConfigPortalTimeout(timeout);
+  if (!wm.startConfigPortal(AP_SSID, NULL)) {
+    Serial.println("ERROR - failed to connect or hit timeout");
+    //errorRing();                 
+  }
 }
 
 
-String getParam(String name){  
+String getParam(String name) {
   String value;
-  if(wm.server->hasArg(name)) {
+  if (wm.server->hasArg(name)) {
     value = wm.server->arg(name);
   }
   return value;
 }
 
-void saveParamCallback(){
+void saveParamCallback() {
   Serial.println("[CALLBACK] saveParamCallback fired");
   // nothing to save
 }
 
-void configModeCallback (WiFiManager *myWiFiManager) {
+void configModeCallback(WiFiManager* myWiFiManager) {
   Serial.println("[CALLBACK] configModeCallback fired");
-  setRingColor(CRGB(0,0,255));
+  setRingColor(CRGB(0, 0, 255));
 }
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                       GAUGE
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-void setGaugePercentage(int value){
+void setGaugePercentage(int value) {
   Serial.print("setting new value: ");
   Serial.println(value);
   gaugeValue = value;
@@ -1462,100 +1490,106 @@ void setGaugePercentage(int value){
 
   int newScaleValue;
   // at least one led should always be display for indication of proper connection and functionality
-  if (value == 0){ 
+  if (value == 0) {
     newScaleValue = 1;
-  } else newScaleValue = getScaleValue(value);
-  
+  }
+  else newScaleValue = getScaleValue(value);
+
   animateGauge(oldScaleValue, newScaleValue);
-  oldScaleValue = newScaleValue;  
+  oldScaleValue = newScaleValue;
 }
 
-void setGaugeDimmLevel(int value){  
+void setGaugeDimmLevel(int value) {
   Serial.print("Setting dimmlevel to ");
   Serial.print(value);
-  Serial.println("%");  
-  dimmLevel = float(value)/100.F;
+  Serial.println("%");
+  dimmLevel = float(value) / 100.F;
   FastLED.setBrightness(dimmLevel * 255);
   refreshGauge();
   sendGaugeDimmLevelValue();
-  
+
 }
 
-void triggerGaugeDimmLevel(){  
-    dimmLevel -= 0.20F;
-    if (dimmLevel > 0.0F && dimmLevel <= 0.15F){
-      dimmLevel = 0.05F;
-    }
-    if (dimmLevel <= 0.0F){
-      dimmLevel = 1.0F;
-    }
-    Serial.print("Setting gaouge dimm level to ");
-    Serial.println(dimmLevel);
-    FastLED.setBrightness(dimmLevel *255);
-    refreshGauge();
-    sendGaugeDimmLevelValue();
+void triggerGaugeDimmLevel() {
+  dimmLevel -= 0.20F;
+  if (dimmLevel > 0.0F && dimmLevel <= 0.15F) {
+    dimmLevel = 0.05F;
+  }
+  if (dimmLevel <= 0.0F) {
+    dimmLevel = 1.0F;
+  }
+  Serial.print("Setting gaouge dimm level to ");
+  Serial.println(dimmLevel);
+  FastLED.setBrightness(dimmLevel * 255);
+  refreshGauge();
+  sendGaugeDimmLevelValue();
 }
 
-void refreshGauge(){
+void refreshGauge() {
   int as_mem = animationSpeed;  // remember animation speed, animation will be disabled temporarily
   animationSpeed = 0;
   clearRing();
-  animateGauge(0,oldScaleValue);
+  animateGauge(0, oldScaleValue);
   animationSpeed = as_mem;
 }
 
-int getScaleValue(int value){
-  int pixels = round((NUMPIXELS * value)/100.0);
+int getScaleValue(int value) {
+  int pixels = round((NUMPIXELS * value) / 100.0);
 
   Serial.print("Pixels ");
   Serial.println(pixels);
-  
+
   if (pixels > NUMPIXELS) {
-    return NUMPIXELS;    
+    return NUMPIXELS;
   }
-  if (pixels <= 0){
+  if (pixels <= 0) {
     return 1;
-  }  
-  return pixels;  
+  }
+  return pixels;
 }
 
-void triggerNotCalibratedAnimation(){ 
+void triggerNotCalibratedAnimation() {
   clearRing();
   notCalibratedAnimationState++;
-  if (notCalibratedAnimationState > (NUMPIXELS-1)) {
-    notCalibratedAnimationState = -1 * (NUMPIXELS-1);
+  if (notCalibratedAnimationState > (NUMPIXELS - 1)) {
+    notCalibratedAnimationState = -1 * (NUMPIXELS - 1);
   }
   if (notCalibratedAnimationState > 0) {
-    leds[notCalibratedAnimationState] = CRGB(255,255,255);
-  } else {
-    leds[(-1)*notCalibratedAnimationState] = CRGB(255,255,255);
+    leds[notCalibratedAnimationState] = CRGB(255, 255, 255);
   }
-  FastLED.show();  
+  else {
+    leds[(-1) * notCalibratedAnimationState] = CRGB(255, 255, 255);
+  }
+  FastLED.show();
 }
 
 
-void sensorInfo(){
+void sensorInfo() {
   clearRing();
-  
+
   if (scd30_available) {
-    leds[0] = CRGB(0,255,0);   
-  } else {
-    leds[0] = CRGB(255,255,255);   
+    leds[0] = CRGB(0, 255, 0);
+  }
+  else {
+    leds[0] = CRGB(255, 255, 255);
   }
   if (bme680_available) {
-    leds[1] = CRGB(0,255,0);   
-  } else {
-    leds[1] =CRGB(255,255,255);   
+    leds[1] = CRGB(0, 255, 0);
+  }
+  else {
+    leds[1] = CRGB(255, 255, 255);
   }
   if (bme280_available) {
-    leds[2] = CRGB(0,255,0);   
-  } else {
-    leds[2] = CRGB(255,255,255);   
+    leds[2] = CRGB(0, 255, 0);
+  }
+  else {
+    leds[2] = CRGB(255, 255, 255);
   }
   if (sps30_available) {
-    leds[3] = CRGB(0,255,0);   
-  } else {
-    leds[3] = CRGB(255,255,255);   
+    leds[3] = CRGB(0, 255, 0);
+  }
+  else {
+    leds[3] = CRGB(255, 255, 255);
   }
 
   FastLED.show();
@@ -1564,157 +1598,173 @@ void sensorInfo(){
 }
 
 
-void animateGauge(int startPixel, int stopPixel){
+void animateGauge(int startPixel, int stopPixel) {
 
-  if ((gaugeValue < 0) || (!marconiSessionInitialized)){
-    leds[0] = CRGB(255,255,255); 
+  if ((gaugeValue < 0) || (!marconiSessionInitialized)) {
+    leds[0] = CRGB(255, 255, 255);
     FastLED.show();
     return;
   }
 
-  
-  if (startPixel <= stopPixel) {  
-    for (int i=0; i < stopPixel; i++){
-      leds[i] = CRGB( (255/NUMPIXELS)*i,(150-(150/NUMPIXELS)*i),0); 
+
+  if (startPixel <= stopPixel) {
+    for (int i = 0; i < stopPixel; i++) {
+      leds[i] = CRGB((255 / NUMPIXELS) * i, (150 - (150 / NUMPIXELS) * i), 0);
       FastLED.show();
-      delay(animationSpeed); 
-    }  
-  } else {    
-    for (int i=startPixel; i >= stopPixel; i--){   
-      leds[i] = CRGB::Black;    
-      FastLED.show(); 
-      delay(animationSpeed); 
-    }    
-  }  
-}
-
-void clearRing(){
-   for (int i=0; i <= ALLPIXELS; i++){
-      leds[i] = CRGB::Black;    
+      delay(animationSpeed);
+    }
   }
-  FastLED.show();  
-}
-
-void setRingColor(const CRGB color){
-    for (int i=0; i <= ALLPIXELS; i++){
-      leds[i] = color;    
+  else {
+    for (int i = startPixel; i >= stopPixel; i--) {
+      leds[i] = CRGB::Black;
+      FastLED.show();
+      delay(animationSpeed);
+    }
   }
-  FastLED.show();  
 }
 
-void setGaugeColor(const CRGB color){
-  for (int i=0; i <= NUMPIXELS; i++){
-      leds[i] = color;    
+void clearRing() {
+  for (int i = 0; i <= ALLPIXELS; i++) {
+    leds[i] = CRGB::Black;
   }
-  FastLED.show();  
+  FastLED.show();
+}
+
+void setRingColor(const CRGB color) {
+  int pixelCount = 0; // only first pixel is on
+
+  // let whole ring flash
+  if (DEBUG) {
+    pixelCount = ALLPIXELS;
+  }
+
+  for (int i = 0; i <= pixelCount; i++) {
+    leds[i] = color;
+  }
+  FastLED.show();
+}
+
+void setGaugeColor(const CRGB color) {
+  int pixelCount = 0; // only first pixel is on
+
+  // let whole gauge flash
+  if (DEBUG) {
+    pixelCount = NUMPIXELS;
+  }
+
+  for (int i = 0; i <= NUMPIXELS; i++) {
+    leds[i] = color;
+  }
+  FastLED.show();
 }
 
 
-void errorRing(int error_id){
-  blinkRing(CRGB(255,0,0));
-  delay(500);    
-  switch (error_id){
-    case ERR_NO_WIFI:
-       setRingColor(CRGB(0,0,255));   // blue
-       break;
-    case ERR_NO_MARCONI_CLIENT:
-       setRingColor(CRGB(255,165,0)); // orange 
-       break;
-    case ERR_MARCONI_SESSION:
-        setRingColor(CRGB(200,1,175));  // violette 
-       break;
-    case ERR_GENERAL:
-       setRingColor(CRGB(255,255,255));  // white
-       break;
-    case ERR_EEPROM:       
-       setRingColor(CRGB(255,0,0));  // red
-       break;
-    case ERR_NOT_FLASHED:
-       setRingColor(CRGB(255,0,0));  // red
-       break;      
-    case ERR_REQUESTED_RESTART:
-       setRingColor(CRGB(0,255,0));  // green
-       break;
-  }  
+void errorRing(int error_id) {
+  blinkRing(CRGB(255, 0, 0));
+  delay(500);
+  switch (error_id) {
+  case ERR_NO_WIFI:
+    setRingColor(CRGB(0, 0, 255));   // blue
+    break;
+  case ERR_NO_MARCONI_CLIENT:
+    setRingColor(CRGB(255, 165, 0)); // orange 
+    break;
+  case ERR_MARCONI_SESSION:
+    setRingColor(CRGB(200, 1, 175));  // violette 
+    break;
+  case ERR_GENERAL:
+    setRingColor(CRGB(255, 255, 255));  // white
+    break;
+  case ERR_EEPROM:
+    setRingColor(CRGB(255, 0, 0));  // red
+    break;
+  case ERR_NOT_FLASHED:
+    setRingColor(CRGB(255, 0, 0));  // red
+    break;
+  case ERR_REQUESTED_RESTART:
+    setRingColor(CRGB(0, 255, 0));  // green
+    break;
+  }
   delay(1000);
   refreshGauge();
 }
 
-void errorGauge(int error_id){   
-  blinkGauge(CRGB(255,0,0)); 
-  delay(500);       
-   switch (error_id){
-    case ERR_WIRE:
-       setGaugeColor(CRGB(255,0,0));   // red 
-       break;
-    case ERR_BME680:
-       setGaugeColor(CRGB(255,165,0));   // orange 
-       break;
-    case ERR_BSEC:
-        setGaugeColor(CRGB(200,1,175));  // violette 
-       break;
-    case ERR_GENERAL:
-       setGaugeColor(CRGB(255,255,255)); // white
-       break;
-    case ERR_BME280:
-       setRingColor(CRGB(255,255,0));      // yellow
-       break;        
+void errorGauge(int error_id) {
+  blinkGauge(CRGB(255, 0, 0));
+  delay(500);
+  switch (error_id) {
+  case ERR_WIRE:
+    setGaugeColor(CRGB(255, 0, 0));   // red 
+    break;
+  case ERR_BME680:
+    setGaugeColor(CRGB(255, 165, 0));   // orange 
+    break;
+  case ERR_BSEC:
+    setGaugeColor(CRGB(200, 1, 175));  // violette 
+    break;
+  case ERR_GENERAL:
+    setGaugeColor(CRGB(255, 255, 255)); // white
+    break;
+  case ERR_BME280:
+    setRingColor(CRGB(255, 255, 0));      // yellow
+    break;
   }
-  delay(1000);    
+  delay(1000);
   refreshGauge();
 }
 
-void blinkRing(CRGB color){
-  for (int i = 0; i< 3; i++){
-      delay(150);    
-      setRingColor(color);
-      delay(150);
-      clearRing();
-    }
+void blinkRing(CRGB color) {
+  for (int i = 0; i < 3; i++) {
+    delay(150);
+    setRingColor(color);
+    delay(150);
+    clearRing();
+  }
 }
 
-void blinkGauge(CRGB color){
-  for (int i = 0; i< 3; i++){
-      delay(150);    
-      setGaugeColor(color);
-      delay(150);
-      clearRing();
-    }
+void blinkGauge(CRGB color) {
+  for (int i = 0; i < 3; i++) {
+    delay(150);
+    setGaugeColor(color);
+    delay(150);
+    clearRing();
+  }
 }
 
-void successRing(){
-  blinkRing(CRGB(0,255,0));      
+void successRing() {
+  blinkRing(CRGB(0, 255, 0));
 }
 
-void successGauge(){
-  blinkGauge(CRGB(0,255,0));      
+void successGauge() {
+  blinkGauge(CRGB(0, 255, 0));
 }
 
-void blinkWarningLed(){
-  for (int i = 0; i< 5; i++){    
-    digitalWrite(WARNING_PIN,true);
+void blinkWarningLed() {
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(WARNING_PIN, true);
     delay(100);
-    digitalWrite(WARNING_PIN,false);
+    digitalWrite(WARNING_PIN, false);
     delay(100);
   }
 }
 
-void setWarningLed(bool state){
-   if (warningLedOn == state){
+void setWarningLed(bool state) {
+  if (warningLedOn == state) {
     return;
-   }   
-   warningLedOn = state;
-   Serial.print("Turning Warning LED ");
-   if (warningLedOn){
-      Serial.println("ON");
-   } else {
+  }
+  warningLedOn = state;
+  Serial.print("Turning Warning LED ");
+  if (warningLedOn) {
+    Serial.println("ON");
+  }
+  else {
     Serial.println("OFF");
-   }
-   if (warningLedOn){
-      blinkWarningLed();
-   }
-   digitalWrite(WARNING_PIN,warningLedOn);
-   sendWarningLedState();
+  }
+  if (warningLedOn) {
+    blinkWarningLed();
+  }
+  digitalWrite(WARNING_PIN, warningLedOn);
+  sendWarningLedState();
 }
 
 void restart() {
@@ -1724,6 +1774,6 @@ void restart() {
     scd30.reset();
     delay(500);
   }
-  
+
   ESP.restart();
 }
