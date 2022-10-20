@@ -205,17 +205,18 @@ void setup() {
   }
 
   Serial.begin(115200);
+
+  initializeLedRing();
+  initializeRandomSeed();
+  initWarningLed();
+  initTriggerButton();
+
   Serial.setDebugOutput(true);
   Serial.println("\n Starting");
   Serial.print("AirLytics - ESP v");
   Serial.println(VERSION);
   Serial.print("Debug enabled: ");
   Serial.println(DEBUG);
-
-  initializeLedRing();
-  initializeRandomSeed();
-  initWarningLed();
-  initTriggerButton();
 
   bool ok = Wire.begin(SDA, SCL);
   //bool ok = Wire.begin();
