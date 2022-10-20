@@ -48,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.66"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.67"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -1435,6 +1435,8 @@ void initializeWiFi() {
 
 bool connectToWiFi() {
   bool res;
+  
+  wm.setConnectRetries(10);
   res = wm.autoConnect(AP_SSID, NULL);
   if (!res) {
     Serial.println("Failed to connect or hit timeout");
