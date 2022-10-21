@@ -1477,6 +1477,7 @@ void saveParamCallback() {
 }
 
 void configModeCallback(WiFiManager* myWiFiManager) {
+  clearRing();
   Serial.println("[CALLBACK] configModeCallback fired");
   setRingColor(CRGB(0, 0, 255));
 }
@@ -1633,7 +1634,7 @@ void clearRing() {
   FastLED.show();
 }
 
-void setRingColor(const CRGB color) {
+void setRingColor(const CRGB color) { 
   int pixelCount = 0; // only first pixel is on
 
   // let whole ring flash
@@ -1648,13 +1649,6 @@ void setRingColor(const CRGB color) {
 }
 
 void setGaugeColor(const CRGB color) {
-  int pixelCount = 1; // only first two pixel is on
-
-  // let whole gauge flash
-  if (DEBUG) {
-    pixelCount = NUMPIXELS;
-  }
-
   for (int i = 0; i <= NUMPIXELS; i++) {
     leds[i] = color;
   }
