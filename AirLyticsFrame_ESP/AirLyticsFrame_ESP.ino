@@ -48,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.67"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.68"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -1648,7 +1648,7 @@ void setRingColor(const CRGB color) {
 }
 
 void setGaugeColor(const CRGB color) {
-  int pixelCount = 0; // only first pixel is on
+  int pixelCount = 1; // only first two pixel is on
 
   // let whole gauge flash
   if (DEBUG) {
