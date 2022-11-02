@@ -16,7 +16,7 @@
  *
  *           FileStructure ┐
  *                         ├ Variable Declaration ┐
- *                         |                      ├t 
+ *                         |                      ├ Wifi
  *                         |                      ├ Gauge
  *                         |                      ├ Connctd / Coap
  *                         |                      ├ General
@@ -26,8 +26,7 @@
  *                         ├ System Functions
  *                         ├ Sensoring
  *                         ├ Connctd
- *                         ├t 
- *                         └ Gauge / LED-RiD 
+ *                         └ Gauge / LED-Ring
  *
  *
  *
