@@ -16,7 +16,7 @@
  *
  *           FileStructure ┐
  *                         ├ Variable Declaration ┐
- *                         |                      ├ WiFit 
+ *                         |                      ├t 
  *                         |                      ├ Gauge
  *                         |                      ├ Connctd / Coap
  *                         |                      ├ General
@@ -26,8 +26,8 @@
  *                         ├ System Functions
  *                         ├ Sensoring
  *                         ├ Connctd
- *                         ├ WiFit 
- *                         └ Gauge / LED-Ring / D 
+ *                         ├t 
+ *                         └ Gauge / LED-RiD 
  *
  *
  *
@@ -48,7 +48,7 @@
 #include "bsec.h"             // https://github.com/BoschSensortec/BSEC-Arduino-library   library that works with a BME680 sensors and calculating CO2 equivalent
 
 
-#define VERSION "1.0.68"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
+#define VERSION "1.0.69"  // major.minor.build   build will increase continously and never reset to 0, independend from major and minor numbers
 
 // ++++++++++++++++++++ WIFI Management +++++++++++++++
 
@@ -195,7 +195,6 @@ struct sps30_measurement m;
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //                                   SETUP
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
 void setup() {
   marconiSessionInitialized = false;
   marconiClientInitialized = false;
@@ -1429,18 +1428,41 @@ void initializeWiFi() {
   std::vector<const char*> menu = { "wifi","info","sep","restart","exit" };
   wm.setMenu(menu);
   wm.setClass("invert");
-  wm.setAPCallback(configModeCallback);
   wm.setConfigPortalTimeout(300);
+
+  // how often frame tries to connect to access point
+  wm.setConnectRetries(8);
+
+  // wait x seconds for each connection attempt
+  wm.setConnectTimeout(3);
+
+  // leave configuration mode in any case - ap mode will
+  // me reenable in error case
+  wm.setBreakAfterConfig(true);
+
+  // called when wifi settings have been changed
+  wm.setSaveConfigCallback(callbackConfigurationSaved);
+
+  // called after AP mode and config portal has started
+  wm.setAPCallback(configModeCallback);
+}
+
+void callbackConfigurationSaved() {
+  // just restart when configuration was stored
+  ESP.restart();
 }
 
 bool connectToWiFi() {
   bool res;
-  
-  wm.setConnectRetries(10);
+
+  // color led orange indicating that its currently connecting
+  blinkRing(CRGB(255, 48, 0));
+  delay(250);
+  setRingColor(CRGB(255, 48, 0));
+
   res = wm.autoConnect(AP_SSID, NULL);
   if (!res) {
     Serial.println("Failed to connect or hit timeout");
-    //errorRing();  
   }
   else {
     //if you get here you have connected to the WiFi    
@@ -1458,10 +1480,8 @@ void startWiFiConfiguration(int timeout) {
   wm.setConfigPortalTimeout(timeout);
   if (!wm.startConfigPortal(AP_SSID, NULL)) {
     Serial.println("ERROR - failed to connect or hit timeout");
-    //errorRing();                 
   }
 }
-
 
 String getParam(String name) {
   String value;
@@ -1477,6 +1497,13 @@ void saveParamCallback() {
 }
 
 void configModeCallback(WiFiManager* myWiFiManager) {
+  // in config mode we try less often to connect in order to reduce waiting time
+  // if it fails the frame will restart and reconnect anyway
+  wm.setConnectRetries(1);
+
+  // wait x seconds for each connection attempt in config mode
+  wm.setSaveConnectTimeout(2);
+
   clearRing();
   Serial.println("[CALLBACK] configModeCallback fired");
   setRingColor(CRGB(0, 0, 255));
@@ -1634,7 +1661,7 @@ void clearRing() {
   FastLED.show();
 }
 
-void setRingColor(const CRGB color) { 
+void setRingColor(const CRGB color) {
   int pixelCount = 0; // only first pixel is on
 
   // let whole ring flash
