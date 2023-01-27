@@ -33,7 +33,7 @@
  *
  */
 
-
+#include <math.h>
 #include <EEPROM.h>
 #include <Wire.h>
  // additional libraries
@@ -67,7 +67,7 @@ CRGB leds[ALLPIXELS];
 int   animationSpeed = 50;
 int   oldScaleValue = 1;     // needed for value change animation of gauge
 int   gaugeValue = -1;    // how much percent of gauge should light up (from left to right); -1 means no value set from backend
-float dimmLevel = 1.0F;  // value between 0 (off) and 1 (full brightness)
+float dimmLevel = 0.2F;  // value between 0 (off) and 1 (full brightness)
 
 int notCalibratedAnimationState = 0;
 unsigned long lastCalibrationAnimationStep = 0;
@@ -105,7 +105,7 @@ MarconiClient* marconiClient;
 bool marconiSessionInitialized = false;
 bool marconiClientInitialized = false;
 unsigned long resubscribeInterval = 60000; // in ms
-unsigned long propertyUpdateInterval = 120000; // in ms, overwritten in debug mode
+unsigned long propertyUpdateInterval = 10000; // in ms, overwritten in debug mode
 unsigned long lastResubscribe = 0; // periodically resubscribe
 unsigned long lastInitTry = 0;
 unsigned long lastPropertyUpdate = 0; // time when property updates were sent
@@ -149,8 +149,8 @@ bool warningLedOn = false;
 int watchdogInterval = 15000; // 15s 
 unsigned long lastWatchdogCheck = 0;
 int watchDogCounter = WATCHDOG_TIMER; // will be decreased every watchdog Interval when bad behavior was detected
-                                                  // system restarts when watchDogCounter reaches 0  
-                                                  // will be set to WATCHDOG_TIMER when all conditions are fulfilled         
+// system restarts when watchDogCounter reaches 0  
+// will be set to WATCHDOG_TIMER when all conditions are fulfilled         
 
 // +++++++++++++++++++++++ Sensoring +++++++++++++++++++
 #define SDA                       21
@@ -169,6 +169,7 @@ unsigned long buttonPressMillis = 0;
 float temperature = 0.0;
 float humidity = 0.0;
 float pressure = 0.0;
+float dewpoint = 0.0;
 int co2 = 0;
 
 bool bme280_available = false;
@@ -232,7 +233,7 @@ void setup() {
   }
 
 
-
+  /*
 
   if (!initEEProm()) {
     Serial.println("ERROR - Failed to initialize EEPROM");
@@ -258,11 +259,11 @@ void setup() {
   }
 
   marconiClientInitialized = initMarconi();
-
+  */
   // try to 
   initSensors();
 
-  refreshGauge();
+  setGaugeDimmLevel(dimmLevel*100);
 }
 
 void initSensors() {
@@ -324,16 +325,16 @@ bool initEEProm() {
 
 void loop() {
   checkButton();        // check wether trigger button was pressed    
-  watchdog(millis());   // trigger the watchdog routine
+  //watchdog(millis());   // trigger the watchdog routine
 
   if (bme680_available) {
     // do not do other stuff when calibrating -> high probability for calibration failure
     if (iaq_accuracy != IAQA_NOT_CALIBRATED) {
-      doMarconiStuff(millis());  // communication stuff with connctd library
+      offlineMode(millis());  // communication stuff with connctd library
     }
   }
   else {
-    doMarconiStuff(millis());  // communication stuff with connctd library
+    offlineMode(millis());  // communication stuff with connctd library
   }
 
   doSensorStuff(millis());  // read sensor values
@@ -413,6 +414,68 @@ void printWatchdogStatus() {
   Serial.println(isObservationTimeout());
   Serial.print("action timeout            : ");
   Serial.println(isActionTimeout());
+}
+
+void offlineMode(unsigned long currTime) {
+  // periodically send property updates
+  if (currTime - lastPropertyUpdate > propertyUpdateInterval) {
+    Serial.println("Evaluate Properties Update");
+    lastPropertyUpdate = currTime;
+    if (sensorsAvailable()) {
+      if (scd30_available) {
+        if (scd30.dataReady()) {
+          if (!scd30.read()) {
+            Serial.println("Error reading SCD30 data");
+          }
+        }
+      }
+      readTemperatureHumidity();
+      readPressure();
+
+      bool particlesAvail = false;
+      if (sps30_available) {
+        particlesAvail = readParticles();
+      }
+      if (readCo2()) {
+        //
+      }
+      else {
+        if (readCo2Equivalent()) {
+          //
+        }
+      }
+
+      Serial.println("Temp");
+      Serial.println(temperature);
+
+      Serial.println("Hum");
+      Serial.println(humidity);
+
+      Serial.println("Dew");
+      Serial.println(dewpoint);
+
+      Serial.println("PM 1.0");
+      Serial.println(m.mc_1p0);
+      Serial.print("PM  2.5: ");
+      Serial.println(m.mc_2p5);
+      Serial.print("PM  4.0: ");
+      Serial.println(m.mc_4p0);
+      Serial.print("PM 10.0: ");
+      Serial.println(m.mc_10p0);
+
+      float score = -1.0;
+      if (particlesAvail) {
+        score = scoreMeasurements(co2, dewpoint, m.mc_1p0, m.mc_2p5, m.mc_4p0, m.mc_10p0);
+      }
+      else {
+        score = scoreMeasurements(co2, dewpoint, -1.0, -1.0, -1.0, -1.0);
+      }
+
+      if (score != -1.0) {
+        setGaugePercentage(score * 100);
+      }
+    }
+  }
 }
 
 // Do everything that is needed for the communication with the connctd backend
@@ -1044,6 +1107,10 @@ void readTemperatureHumidity() {
     humidity = newHumidity;
   }
 
+  if (newHumidity != 0.0) {
+    dewpoint = calcDewPoint(newTemperature, newHumidity);
+  }
+
 
   if (temperature != newTemperature) {
     lastValueChange = millis();
@@ -1053,6 +1120,10 @@ void readTemperatureHumidity() {
 
 
 float calcDewPoint(float temperature, float humidity) {
+  if (humidity == 0) {
+    return 0.0;
+  }
+
   float dewPoint = 0.0;
   float vapPres = calcVaporPressure(temperature, humidity);
 
@@ -1516,7 +1587,7 @@ void setGaugePercentage(int value) {
   Serial.print("setting new value: ");
   Serial.println(value);
   gaugeValue = value;
-  sendGaugeValue();
+  //sendGaugeValue();
 
   int newScaleValue;
   // at least one led should always be display for indication of proper connection and functionality
@@ -1630,7 +1701,7 @@ void sensorInfo() {
 
 void animateGauge(int startPixel, int stopPixel) {
 
-  if ((gaugeValue < 0) || (!marconiSessionInitialized)) {
+  if (gaugeValue < 0) {
     leds[0] = CRGB(255, 255, 255);
     FastLED.show();
     return;
@@ -1799,4 +1870,139 @@ void restart() {
   }
 
   ESP.restart();
+}
+
+
+
+
+
+/* SCORING ported from airlytics */
+const int maxCO2 = 2500;
+const int minCO2 = 400;
+const int maxParticles = 200;
+const int minParticles = 0;
+const int dpDry = 0.0;
+const int dpOK = 9.0;
+const int dpWet = 14.0;
+const int dpExtremeWet = 17.0;
+
+
+// evaluates co2 value
+float scoreC02(float value) {
+  if (value < minCO2) {
+    0.0;
+  }
+
+  if (value > maxCO2) {
+    return 1.0;
+  }
+
+  float s = maxCO2 - minCO2;   // normalize scale
+  float v = value - minCO2; // normalize value
+
+  return v / s;
+}
+
+// score evaluates a pm1 value
+float scorePM(float value) {
+  if (value < minParticles) {
+    return 0.0;
+  }
+
+  if (value > maxParticles) {
+    return 1.0;
+  }
+
+  float s = maxParticles - minParticles; // normalize scale
+  float v = value - minParticles;     // normalize value
+
+  return v / s;
+}
+
+// ScoreDewPoint implements interface definition
+float scoreDewPoint(float value) {
+  // scale does not go from good to bad:
+
+  //      dry -------- good ------ wet ---- extreme wet
+
+  if (value < dpDry) {
+    return 0.5;
+  }
+
+  if (value > dpExtremeWet) {
+    return 1.0;
+  }
+
+  float s = 1.0;
+  float v = 1.0;
+
+  if (value > dpOK) {
+    s = dpExtremeWet - dpOK;
+    v = value - dpOK;
+  }
+  else {
+    s = dpOK - dpDry;
+    v = dpOK - value;
+    v = v / 2.0;
+  }
+
+  return v / s;
+}
+
+// ScoreMeasurements implements interface definition
+float scoreMeasurements(float co2, float dewPoint, float pm1, float pm2x5, float pm4, float pm10) {
+  if (co2 == 0.0 || dewPoint == 0.0) {
+    return -1.0;
+  }
+
+  float q = 0.0;
+
+  q = scoreC02(co2);
+
+  if (pm1 != -1.0 && pm2x5 != -1.0 && pm4 != -1.0 && pm10 != -1.0) {
+    // pm1
+    float ev = scorePM(pm1);
+
+    // when scoring for particles is higher than the one for CO2,
+    // take the scoring for particles
+    if (ev > q) {
+      q = ev;
+    }
+
+    // pm2.5
+    ev = scorePM(pm2x5);
+
+    // when scoring for particles is higher than the one for CO2,
+    // take the scoring for particles
+    if (ev > q) {
+      q = ev;
+    }
+
+    // pm4
+    ev = scorePM(pm4);
+
+    // when scoring for particles is higher than the one for CO2,
+    // take the scoring for particles
+    if (ev > q) {
+      q = ev;
+    }
+
+    // pm10
+    ev = scorePM(pm10);
+
+    // when scoring for particles is higher than the one for CO2,
+    // take the scoring for particles
+    if (ev > q) {
+      q = ev;
+    }
+  }
+
+  float evaluatedDewPoint = scoreDewPoint(dewPoint);
+
+  // dewpoint could only influence quality index when dewpoint quality index is higher
+  if (evaluatedDewPoint > q) {
+    q = q + (evaluatedDewPoint - q) * 0.2; // 0.2 represents the weight of dewpoint for overall quality index
+  }
+
+  return q;
 }
