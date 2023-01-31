@@ -92,7 +92,7 @@ All libraries (except connctd Marconi) could be installed via the Library Manage
 | Bosh Sensortec          | 1.6.1480    | https://github.com/BoschSensortec/BSEC-Arduino-library |
 | connctd Marconi         |             | https://github.com/connctd/marconi-lib                 |
 | ChaCha (marconi dep)    |             | https://github.com/OperatorFoundation/Crypto           |
-| ESP Coap                |             | https://github.com/connctd/ESP-CoAP                    |
+| ESP Coap (marconi dep)  |             | https://github.com/connctd/ESP-CoAP                    |
 | Sensirion SPS30         | 1.0.0       | https://github.com/Sensirion/arduino-sps               |
 
 ### Installing connctd Marconi library
@@ -117,7 +117,7 @@ and change it to
 recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -Wl,--start-group {object_files} "{archive_file_path}" {compiler.c.elf.libs} {compiler.libraries.ldflags} -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"
 ```
 
-On **Windows** open: `c:\Users\YOURUSERNAME\AppData\Local\Arduino15\packages\esp32\hardware\esp32\1.0.6` and search for line starting with `recipe.c.combine.pattern`. In that line search for `-Wl`. Before that string add the following: `{compiler.libraries.ldflags}`. Resulting line should look like `recipe.c.combine.pattern [...] {build.extra_libs} *{compiler.libraries.ldflags}* -Wl [...]`
+On **Windows** open: `c:\Users\YOURUSERNAME\AppData\Local\Arduino15\packages\esp32\hardware\esp32\1.0.6` and search for line starting with `recipe.c.combine.pattern`. In that line search for `-Wl`. Before that string add the following: `{compiler.libraries.ldflags}`. Resulting line should look like `recipe.c.combine.pattern [...] {build.extra_libs} {compiler.libraries.ldflags} -Wl [...]`
 
 
 ## Flashing the device credentials
