@@ -98,13 +98,15 @@ All libraries (except connctd Marconi) could be installed via the Library Manage
 
 | library                 | version     | link                                                   |
 | :---------------------- | :---------- | :----------------------------------------------------- |
-| Wifi Manager            | 2.0.3-alpha | https://github.com/tzapu/WiFiManager                   |
+| Wifi Manager            | 2.0.4-beta  | https://github.com/tzapu/WiFiManager                   |
 | Fast LED                | 3.4.0       | https://github.com/FastLED/FastLED                     |
 | Adafruit Unified Sensor | 1.1.4       | https://github.com/adafruit/Adafruit_Sensor            |
 | Adafruit BME280         | 2.1.3       | https://github.com/adafruit/Adafruit_BME280_Library    |
 | Adafruit SCD30          | 1.0.7       | https://github.com/adafruit/Adafruit_SCD30             |
 | Bosh Sensortec          | 1.6.1480    | https://github.com/BoschSensortec/BSEC-Arduino-library |
 | connctd Marconi         |             | https://github.com/connctd/marconi-lib                 |
+| ChaCha (marconi dep)    |             | https://github.com/OperatorFoundation/Crypto           |
+| ESP Coap                |             | https://github.com/connctd/ESP-CoAP                    |
 | Sensirion SPS30         | 1.0.0       | https://github.com/Sensirion/arduino-sps               |
 
 ### Installing connctd Marconi library
