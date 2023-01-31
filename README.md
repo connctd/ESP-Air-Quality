@@ -78,20 +78,6 @@ In order to install ESP32 extension to the Arduino IDE, add the line ```https://
 
 Open the Board Management and search for ```esp32```. Choose the version ```1.0.6``` developed by Espressif Systems and hit install. 
 
-With version 1.0.6, most ESP32 configurations of the Arduino IDE have to be modified. 
-
-For MacOS, go to folder `~/Library/Arduino15/packages/esp32/hardware/esp32/1.0.6` and open `platform.txt`. Search for line
-
-```
-recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} {compiler.libraries.ldflags} -Wl,--start-group {object_files} "{archive_file_path}" {compiler.c.elf.libs} {build.extra_libs} -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"
-```
-
-and change it to
-
-```
-recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -Wl,--start-group {object_files} "{archive_file_path}" {compiler.c.elf.libs} {compiler.libraries.ldflags} -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"
-```
-
 ## Libraries
 
 All libraries (except connctd Marconi) could be installed via the Library Management of Arduino IDE. In the menu bar go to ```Tools->Manage Libraries...``` and install the libraries below: 
@@ -114,6 +100,24 @@ All libraries (except connctd Marconi) could be installed via the Library Manage
 If you do not have git installed on your machine, please open the browser and and go to the [github page](https://github.com/connctd/marconi-lib). Press on ```Code``` and download the ZIP file. Extract the content to your Arduino libraries folder and restart Arduino IDE again. The macroni library shall now be available. 
 
 If you have git installed, navigate to your Arduino IDE libraries folder and run the following command ```git clone https://github.com/connctd/marconi-lib```
+
+### Modify platform.txt
+
+The bsec library expects certain flags during compilation like mentioned here: https://github.com/BoschSensortec/BSEC-Arduino-library#3-modify-the-platformtxt-file Checkout the instructions. Alternatively you can do the following (but we cant guarantee that it works like that with later versions):
+
+For **MacOS**, go to folder `~/Library/Arduino15/packages/esp32/hardware/esp32/1.0.6` and open `platform.txt`. Search for line
+
+```
+recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} {compiler.libraries.ldflags} -Wl,--start-group {object_files} "{archive_file_path}" {compiler.c.elf.libs} {build.extra_libs} -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"
+```
+
+and change it to
+
+```
+recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -Wl,--start-group {object_files} "{archive_file_path}" {compiler.c.elf.libs} {compiler.libraries.ldflags} -Wl,--end-group -Wl,-EL -o "{build.path}/{build.project_name}.elf"
+```
+
+On **Windows** open: `c:\Users\YOURUSERNAME\AppData\Local\Arduino15\packages\esp32\hardware\esp32\1.0.6` and search for line starting with `recipe.c.combine.pattern`. In that line search for `-Wl`. Before that string add the following: `{compiler.libraries.ldflags}`. Resulting line should look like `recipe.c.combine.pattern [...] {build.extra_libs} *{compiler.libraries.ldflags}* -Wl [...]`
 
 
 ## Flashing the device credentials
